@@ -1,0 +1,5 @@
+{
+  "name": "ScholarPulse: Academic Alert Aggregator",
+  "description": "An intelligent dashboard that aggregates Google Scholar email alerts, filters them by your research keywords, and generates AI-powered summaries of the latest academic trends.",
+  "requestFramePermissions": []
+}
