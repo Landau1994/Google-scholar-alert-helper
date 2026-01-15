@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "time": "08:00",
+  "timezone": "UTC",
+  "batchSize": 20,
+  "analysisLimit": 200,
+  "minScore": 10,
+  "reviewPaperLimit": 50
+}
