@@ -6,6 +6,18 @@
 
 An AI-powered academic paper tracking and literature review tool. Automatically syncs emails from academic alert services (Google Scholar, bioRxiv, Nature, etc.), extracts papers using Gemini AI, and generates daily literature reviews.
 
+Details, can be seen in [[./ACADEMIC_REPORT.md]]
+
+| Feature | Manual Alerts | Reference Managers | ScholarPulse |
+|---------|---------------|-------------------|--------------|
+| Automatic email processing | No | Partial | Yes |
+| AI relevance scoring | No | No | Yes |
+| Source quality weighting | No | No | Yes |
+| Automated literature review | No | No | Yes |
+| Multi-source aggregation | Manual | Limited | Automatic |
+| Scheduled operation | No | No | Yes |
+| Custom keyword filtering | No | Yes | Yes |
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
