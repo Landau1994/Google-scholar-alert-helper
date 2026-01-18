@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm ls:*)",
+      "Bash(npx tsx:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(ls:*)",
+      "Bash(xargs ls:*)",
+      "Bash(npm install:*)",
+      "Bash(pm2 logs:*)",
+      "Bash(source ~/.use_proxy)",
+      "Bash(grep:*)",
+      "Bash(node --check:*)",
+      "Bash(find:*)",
+      "Bash(bun run:*)"
+    ]
+  }
+}

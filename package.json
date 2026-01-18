@@ -1,0 +1,32 @@
+{
+  "name": "scholarpulse:-academic-alert-aggregator",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "scheduler": "npx tsx scripts/scheduler.ts",
+    "scheduler:now": "npx tsx scripts/scheduler.ts --now",
+    "sync": "npx tsx scripts/syncGmail.ts",
+    "validate": "npx tsx scripts/validatePaperTitles.ts",
+    "validate:refine": "npx tsx scripts/validatePaperTitles.ts --refine"
+  },
+  "dependencies": {
+    "@google/genai": "^1.34.0",
+    "lucide-react": "^0.562.0",
+    "node-cron": "^4.2.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "recharts": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/node-cron": "^3.0.11",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "undici": "^7.18.2",
+    "vite": "^6.2.0"
+  }
+}

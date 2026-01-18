@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "time": "08:00",
+  "timezone": "Asia/Shanghai",
+  "batchSize": 5,
+  "analysisLimit": 200,
+  "minScore": 20,
+  "reviewPaperLimit": 50
+}
