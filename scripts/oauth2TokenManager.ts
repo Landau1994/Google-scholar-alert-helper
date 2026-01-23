@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
 
 const TOKEN_PATH = path.resolve(process.cwd(), 'oauth2_tokens.json');
 
@@ -23,10 +24,31 @@ export interface OAuth2Config {
 export class OAuth2TokenManager {
   private tokens: OAuth2Tokens | null = null;
   private config: OAuth2Config;
+  private dispatcher: ProxyAgent | undefined;
 
   constructor(config: OAuth2Config) {
     this.config = config;
     this.loadTokens();
+    
+    // Configure proxy if available
+    const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    if (proxyUrl) {
+        this.dispatcher = new ProxyAgent({
+            uri: proxyUrl,
+            connect: { timeout: 30000 }
+        });
+        console.log(`[OAuth2] Proxy configured for token manager: ${proxyUrl}`);
+    }
+  }
+
+  /**
+   * Helper to perform fetch with proxy support
+   */
+  private async fetchWithProxy(url: string, init: any): Promise<any> {
+      if (this.dispatcher) {
+          return undiciFetch(url, { ...init, dispatcher: this.dispatcher });
+      }
+      return undiciFetch(url, init);
   }
 
   /**
@@ -94,7 +116,7 @@ export class OAuth2TokenManager {
    * Exchange authorization code for tokens
    */
   async exchangeCodeForTokens(code: string): Promise<OAuth2Tokens> {
-    const response = await fetch('https://oauth2.googleapis.com/token', {
+    const response = await this.fetchWithProxy('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -113,7 +135,7 @@ export class OAuth2TokenManager {
       throw new Error(`Token exchange failed: ${error}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
 
     this.tokens = {
       access_token: data.access_token,
@@ -139,7 +161,7 @@ export class OAuth2TokenManager {
 
     console.log('[OAuth2] Refreshing access token...');
 
-    const response = await fetch('https://oauth2.googleapis.com/token', {
+    const response = await this.fetchWithProxy('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -162,7 +184,7 @@ export class OAuth2TokenManager {
       throw new Error(`Token refresh failed: ${error}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
 
     this.tokens.access_token = data.access_token;
     this.tokens.expiry_date = Date.now() + (data.expires_in * 1000);

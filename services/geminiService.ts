@@ -37,7 +37,6 @@ const ai = new GoogleGenAI({
   apiKey: apiKey || '',
   httpOptions: {
     timeout: 120000, // 2 minutes timeout for API calls
-    fetch: globalThis.fetch // Explicitly use global fetch (proxy-aware in Node.js)
   }
 });
 
