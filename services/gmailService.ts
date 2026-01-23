@@ -295,6 +295,20 @@ export class GmailService {
       }
     }
 
-    return fetchedEmails;
+    // Deduplicate emails by subject (same subject = duplicate alert)
+    const seenSubjects = new Set<string>();
+    const uniqueEmails = fetchedEmails.filter(email => {
+      if (seenSubjects.has(email.subject)) {
+        return false;
+      }
+      seenSubjects.add(email.subject);
+      return true;
+    });
+
+    if (uniqueEmails.length < fetchedEmails.length) {
+      logger.info(`Removed ${fetchedEmails.length - uniqueEmails.length} duplicate emails (by subject)`);
+    }
+
+    return uniqueEmails;
   }
 }

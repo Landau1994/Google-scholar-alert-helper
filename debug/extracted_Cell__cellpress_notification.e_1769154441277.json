@@ -1,0 +1,109 @@
+{
+  "email": {
+    "from": "Cell <cellpress@notification.elsevier.com>",
+    "subject": "Cell: January 22, 2026 (Volume 189, Issue 2)",
+    "date": "Thu, 22 Jan 2026 16:33:31 +0000",
+    "bodyLength": 94589
+  },
+  "articles": [
+    {
+      "title": "Website Table of Contents Online Now Archive",
+      "journal": "Cell Press",
+      "estimatedTokens": 456,
+      "htmlContentLength": 1821,
+      "htmlContent": " <p style=\"font-family: 'Arial', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 400; text-align: left; line-height: 21px; Margin: 0;\"> <a href=\"https://click.notification.elsevier.com/CL0/https:%2F%2Fwww.cell.com%2Fcell%2Fhome%3Fdgcid=raven_jbs_etoc_email/1/0100019be68dcdd2-9d57ba21-2345-424c-980e-2bb6ad9c0880-000000/3OKH1ZjihajqJNPbrr7W6oL2niVD21sq9O9GAiAzuSc=441\" style=\"color:#007DBC; text-decoration: none;\">Website</a> </p> <p style=\"font-family: 'Arial', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 400; text-align: left; line-height: 21px; Margin: 0;\"> <a href=\"https://click.notification.elsevier.com/CL0/https:%2F%2Fwww.cell.com%2Fcell%2Fissue%3Fpii=S0092867425X00039%26dgcid=raven_jbs_etoc_email/1/0100019be68dcdd2-9d57ba21-2345-424c-980e-2bb6ad9c0880-000000/KHOqhyYyd4o8XvO4MkZ2mNYoAtClAtma2XrHj5RtYCI=441\" style=\"color:#007DBC; text-decoration: none;\">Table of Contents</a> </p> <p style=\"font-family: 'Arial', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 400; text-align: left; line-height: 21px; Margin: 0;\"> <a href=\"https://click.notification.elsevier.com/CL0/https:%2F%2Fwww.cell.com%2Fcell%2Fnewarticles%3Fdgcid=raven_jbs_etoc_email/1/0100019be68dcdd2-9d57ba21-2345-424c-980e-2bb6ad9c0880-000000/n730e4u80cQvxIGT0llxXL1Bm1xmnqRrXCyj67rdVNs=441\" style=\"color:#007DBC; text-decoration: none;\">Online Now</a> </p> <p style=\"font-family: 'Arial', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 400; text-align: left; line-height: 21px; Margin: 0;\"> <a href=\"https://click.notification.elsevier.com/CL0/https:%2F%2Fwww.cell.com%2Fcell%2Farchive%3Fdgcid=raven_jbs_etoc_email/1/0100019be68dcdd2-9d57ba21-2345-424c-980e-2bb6ad9c0880-000000/RW9v8cAIs0beHfNldGtfc1Xr8xmq4tBAhko1ppJW0Hg=441\" style=\"color:#007DBC; text-decoration: none;\">Archive</a> </p> "
+    },
+    {
+      "title": "Multiplex immunofluorescence proteomics is a powerful method in spatial biology to decipher cell types, states, and architecture in tissues. In this issue of Cell, Valanarasu et al. develop GigaTIME, an expansive population-scale analysis of the tumor immune microenvironment of over 14,000 patients across 24 cancer types, enabling clinical discovery and patient stratification.",
+      "journal": "Cell Press",
+      "estimatedTokens": 102,
+      "htmlContentLength": 406,
+      "htmlContent": " <p>Multiplex immunofluorescence proteomics is a powerful method in spatial biology to decipher cell types, states, and architecture in tissues. In this issue of <em>Cell</em>, Valanarasu et al. develop <em>GigaTIME</em>, an expansive population-scale analysis of the tumor immune microenvironment of over 14,000 patients across 24 cancer types, enabling clinical discovery and patient stratification.</p> "
+    },
+    {
+      "title": "In the current issue of Cell, three papers describe new mechanistic information about how EBV transforms B cells to become antigen-presenting cells in the brain that drive demyelinating disease.",
+      "journal": "Cell Press",
+      "estimatedTokens": 53,
+      "htmlContentLength": 212,
+      "htmlContent": " <p>In the current issue of <em>Cell</em>, three papers describe new mechanistic information about how EBV transforms B cells to become antigen-presenting cells in the brain that drive demyelinating disease.</p> "
+    },
+    {
+      "title": "From single-base edits to engineering the delivery of large DNA constructs, this review covers the advances in mammalian genome writing and its promise in enabling transformative advances in gene regulation, disease modeling, and cell therapies, while highlighting current bottlenecks and strategies to overcome them.",
+      "journal": "Cell Press",
+      "estimatedTokens": 82,
+      "htmlContentLength": 326,
+      "htmlContent": " <p>From single-base edits to engineering the delivery of large DNA constructs, this review covers the advances in mammalian genome writing and its promise in enabling transformative advances in gene regulation, disease modeling, and cell therapies, while highlighting current bottlenecks and strategies to overcome them.</p> "
+    },
+    {
+      "title": "Evolutionary transcriptome analysis of seven angiosperm (flowering plant) species uncovers rapid evolution of gene expression patterns, particularly for genes involved in the responses to endogenous and environmental stimuli. A comparative analysis with available data from mammals confirms different rates of expression divergence in both clades and kingdoms.",
+      "journal": "Cell Press",
+      "estimatedTokens": 93,
+      "htmlContentLength": 369,
+      "htmlContent": " <p>Evolutionary transcriptome analysis of seven angiosperm (flowering plant) species uncovers rapid evolution of gene expression patterns, particularly for genes involved in the responses to endogenous and environmental stimuli. A comparative analysis with available data from mammals confirms different rates of expression divergence in both clades and kingdoms.</p> "
+    },
+    {
+      "title": "Addition of a pre-TCR domain to chimeric antigen receptors boosts mRNA translation and enables durable tumor control by T cells in both blood and solid cancers.",
+      "journal": "Cell Press",
+      "estimatedTokens": 43,
+      "htmlContentLength": 169,
+      "htmlContent": " <p>Addition of a pre-TCR domain to chimeric antigen receptors boosts mRNA translation and enables durable tumor control by T cells in both blood and solid cancers.</p> "
+    },
+    {
+      "title": "This study presents a structural basis for understanding how microtubules can act as spatiotemporal signal sensors to control cellular responses.",
+      "journal": "Cell Press",
+      "estimatedTokens": 39,
+      "htmlContentLength": 154,
+      "htmlContent": " <p>This study presents a structural basis for understanding how microtubules can act as spatiotemporal signal sensors to control cellular responses.</p> "
+    },
+    {
+      "title": "Cellular senescence and brain structural changes represent defining features of aging, yet their relationship remains poorly understood. This study demonstrates a molecular link between these processes by integrating structural neuroimaging with multi-omics data from living human brain tissue, identifying shared biology between senescence and brain structure across the lifespan in multiple cell types.",
+      "journal": "Cell Press",
+      "estimatedTokens": 104,
+      "htmlContentLength": 413,
+      "htmlContent": " <p>Cellular senescence and brain structural changes represent defining features of aging, yet their relationship remains poorly understood. This study demonstrates a molecular link between these processes by integrating structural neuroimaging with multi-omics data from living human brain tissue, identifying shared biology between senescence and brain structure across the lifespan in multiple cell types.</p> "
+    },
+    {
+      "title": "Dendritic cells in lymph nodes orchestrate large-scale innate effector cell trafficking to contain pathogens, but this disrupts tissue structure and early adaptive immunity. After pathogen control, dendritic cells and recruited monocytes restore lymph node architecture to allow potent adaptive responses to ensue, collectively enabling both immediate and long-term host defense.",
+      "journal": "Cell Press",
+      "estimatedTokens": 97,
+      "htmlContentLength": 388,
+      "htmlContent": " <p>Dendritic cells in lymph nodes orchestrate large-scale innate effector cell trafficking to contain pathogens, but this disrupts tissue structure and early adaptive immunity. After pathogen control, dendritic cells and recruited monocytes restore lymph node architecture to allow potent adaptive responses to ensue, collectively enabling both immediate and long-term host defense.</p> "
+    },
+    {
+      "title": "EBV infection alters the transcriptome of B cells, which leads to presentation of MBP peptides on HLA-DR15 molecules. MBP peptide-specific CD4+ T cells are found in the peripheral immune compartment and CNS, where they recognize the same MBP peptides on HLA-DR15 molecules.",
+      "journal": "Cell Press",
+      "estimatedTokens": 74,
+      "htmlContentLength": 293,
+      "htmlContent": " <p>EBV infection alters the transcriptome of B cells, which leads to presentation of MBP peptides on HLA-DR15 molecules. MBP peptide-specific CD4<sup>+</sup> T cells are found in the peripheral immune compartment and CNS, where they recognize the same MBP peptides on HLA-DR15 molecules.</p> "
+    },
+    {
+      "title": "Researchers identified anoctamin-2 (ANO2) as a frequent autoimmune target in multiple sclerosis, with T cell responses against ANO2 occurring in over half of patients. These ANO2-specific T cells share cross-reactivity and pathogenic features with T cell responses to EBNA1 from Epstein-Barr virus, and their activation worsens MS-like disease in mice.",
+      "journal": "Cell Press",
+      "estimatedTokens": 91,
+      "htmlContentLength": 361,
+      "htmlContent": " <p>Researchers identified anoctamin-2 (ANO2) as a frequent autoimmune target in multiple sclerosis, with T cell responses against ANO2 occurring in over half of patients. These ANO2-specific T cells share cross-reactivity and pathogenic features with T cell responses to EBNA1 from Epstein-Barr virus, and their activation worsens MS-like disease in mice.</p> "
+    },
+    {
+      "title": "Myelin-reactive B cells entering the central nervous system capture cognate antigen from the parenchyma. Without T cell help, they rapidly die; however, Epstein-Barr virus LMP1 enables them to bypass this checkpoint and cause demyelination, as seen in multiple sclerosis.",
+      "journal": "Cell Press",
+      "estimatedTokens": 70,
+      "htmlContentLength": 280,
+      "htmlContent": " <p>Myelin-reactive B cells entering the central nervous system capture cognate antigen from the parenchyma. Without T cell help, they rapidly die; however, Epstein-Barr virus LMP1 enables them to bypass this checkpoint and cause demyelination, as seen in multiple sclerosis.</p> "
+    },
+    {
+      "title": "Clinical evidence from AD patients reveals an association between impaired CCKBR-Gq signaling and disease severity, guiding structure-based design of a Gq-biased agonist that rescues memory and pathology in AD animal models.",
+      "journal": "Cell Press",
+      "estimatedTokens": 59,
+      "htmlContentLength": 233,
+      "htmlContent": " <p>Clinical evidence from AD patients reveals an association between impaired CCKBR-Gq signaling and disease severity, guiding structure-based design of a Gq-biased agonist that rescues memory and pathology in AD animal models.</p> "
+    },
+    {
+      "title": "BRAIN-MAGNET, a convolutional neural network trained on 148,198 functionally tested non-coding regulatory elements, predicts enhancer activity directly from DNA sequence and identifies nucleotides essential for function. This functional genomic atlas and BRAIN-MAGNET prioritize disease-relevant non-coding variants, advancing functional interpretation of the regulatory genome in neurodevelopment and neurological disease.",
+      "journal": "Cell Press",
+      "estimatedTokens": 108,
+      "htmlContentLength": 432,
+      "htmlContent": " <p>BRAIN-MAGNET, a convolutional neural network trained on 148,198 functionally tested non-coding regulatory elements, predicts enhancer activity directly from DNA sequence and identifies nucleotides essential for function. This functional genomic atlas and BRAIN-MAGNET prioritize disease-relevant non-coding variants, advancing functional interpretation of the regulatory genome in neurodevelopment and neurological disease.</p> "
+    }
+  ],
+  "extractedAt": "2026-01-23T07:47:21.277Z"
+}

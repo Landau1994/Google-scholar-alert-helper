@@ -1,0 +1,18 @@
+{
+  "email": {
+    "from": "openRxiv-mailer@alerts.highwire.org",
+    "subject": "bioRxiv Subject Collection Alert",
+    "date": "Thu, 22 Jan 2026 17:05:44 -0800",
+    "bodyLength": 12109
+  },
+  "articles": [
+    {
+      "title": "bioRxiv Subject Collection Alert",
+      "journal": "Unknown",
+      "estimatedTokens": 3028,
+      "htmlContentLength": 12109,
+      "htmlContent": "bioRxiv Online \r\n\r\n\n\r\n\r\nSubject alerts for bioRxiv online collections\nYou have requested alerts for the following bioRxiv online collections:\n\r\n\r\nBioinformatics Genomics Systems Biology \r\n\n---\nBioinformatics \r\n\n---\n\r\n\r\nAMPBAN: A Deep Learning Framework Integrating Protein Sequence and Structural Features for Antimicrobial Peptide Prediction\n\r\nWenhui Bai, Wenhao Yang, Yao-Qing Chen, Hongchao Ji, Lorraine Brennan, and Li Wang\n\r\nbioRxiv posted 22 January 2026 doi:10.64898/2026.01.20.700468\n\r\n[Abstract] [PDF]\n\n\r\n\n\r\n\r\nComparative pangenomics unveils distinct host adaptation levels and conserved biosynthetic potential in microbiome Clostridia\n\r\nLucas De Vrieze, Jan Aerts, and Joleen Masschelein\n\r\nbioRxiv posted 22 January 2026 doi:10.1101/2025.02.12.637840\n\r\n[Abstract] [PDF]\n\n\r\n\n\r\n\r\nMAVISp: A Modular Structure-Based Framework for Protein Variant Effects\n\r\nMatteo Arnaudi, Ludovica Beltrame, Kristine Degn, Mattia Utichi, Simone Scrima, Pablo Sanchez-Izquierdo Besora, Karolina Krzesinska, Francesca Maselli, Terezia Dorcakova, Jordan Safer, Alberte Heering Estad, Katrine Meldgard, Philipp Becker, Valentina Sora, Alberto Pettenella, Jeremy Vinhas, Laura Bauer, Paraskevi Saridaki, Anna Melidi, Lorenzo Favaro, Eleni Kiachaki, Anu Oswal, Joachim Breitenstein, Burcu Aykac Fas, Guglielmo Tedeschi, Peter Wad Sackett, Claudia Cava, Anna Rohlin, Mef Nilbert, Sumaiya Iqbal, Matteo Lambrughi, Matteo Tiberti, and Elena Papaleo\n\r\nbioRxiv posted 22 January 2026 doi:10.1101/2022.10.22.513328\n\r\n[Abstract] [PDF]\n\n\r\n\n\r\n\r\nComputational pipeline reveals nature's untapped reservoir of halogenating enzymes\n\r\nJudit Szenei, Ashleigh Burke, Anne Liong, Aleksandra Korenskaia, April L. Lukowski, Nadine Ziemert, Pablo I. Nikel, Pedro N. Leao, Bradley S. Moore, Tilmann Weber, and Kai Blin\n\r\nbioRxiv posted 22 January 2026 doi:10.64898/2026.01.20.700248\n\r\n[Abstract] [PDF]\n\n\r\n\n\r\n\r\n2D spatial tissue analysis often misrepresents true biological patterns of 3D tissues\n\r\nDavid Le, David I Kaplan, and Anna S Tri"
+    }
+  ],
+  "extractedAt": "2026-01-23T08:21:52.375Z"
+}

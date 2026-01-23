@@ -15,7 +15,12 @@
       "Bash(grep:*)",
       "Bash(node --check:*)",
       "Bash(find:*)",
-      "Bash(bun run:*)"
+      "Bash(bun run:*)",
+      "Bash(tee:*)",
+      "Bash(jq:*)",
+      "Bash(python3:*)",
+      "Bash(cat:*)",
+      "Bash(fold:*)"
     ]
   }
 }

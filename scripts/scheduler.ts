@@ -2,10 +2,11 @@ import './loadEnv.ts';
 import fs from 'fs';
 import path from 'path';
 import cron from 'node-cron';
-import { generateLiteratureReviewLightweight, processScholarEmailsLightweight, deduplicatePapers } from '../services/geminiService.ts';
+import { generateLiteratureReviewLightweight, scoreExtractedArticles, deduplicatePapers } from '../services/geminiService.ts';
 import type { Paper } from '../types.ts';
 import { syncGmailEmails } from './syncGmail.ts';
 import { validateExtraction, refineAndSave } from './validatePaperTitles.ts';
+import { extractArticlesFromEmail } from '../services/emailArticleExtractor.ts';
 
 if (!process.env.VITE_GEMINI_API_KEY) {
   console.error("[Scheduler] No API Key found in .env.local");
@@ -35,7 +36,7 @@ interface SchedulerConfig {
   batchDelaySeconds: number; // Delay between batches (helps with rate limiting)
   analysisLimit: number; // Max papers to analyze per batch
   minScore: number; // Minimum relevance score to include
-  reviewPaperLimit: number; // Max papers to include in literature review (0 = no limit)
+  scoreBatchSize: number; // Number of articles to score per API call
 }
 
 function loadConfig(): SchedulerConfig {
@@ -52,7 +53,7 @@ function loadConfig(): SchedulerConfig {
     batchDelaySeconds: 5, // Default: 5 seconds between batches
     analysisLimit: 200,
     minScore: 10,
-    reviewPaperLimit: 50 // Default: top 50 papers for review generation
+    scoreBatchSize: 50 // Default: 50 articles per scoring batch
   };
 
   try {
@@ -489,6 +490,18 @@ function parseSyncFileArg(): string | null {
   return null;
 }
 
+// Parse --debug flag for verbose output
+function isDebugMode(): boolean {
+  return process.argv.includes('--debug') || process.argv.includes('-v') || process.argv.includes('--verbose');
+}
+
+// Debug logger - only logs if debug mode is enabled
+const debugLog = (message: string, ...args: any[]) => {
+  if (isDebugMode()) {
+    console.log(`[DEBUG] ${message}`, ...args);
+  }
+};
+
 async function generateDailyReport(): Promise<void> {
   // Reload config first to get timezone
   const currentConfig = loadConfig();
@@ -594,45 +607,75 @@ async function generateDailyReport(): Promise<void> {
         console.log(`[Scheduler] Loaded ${keywords.length} keywords and ${penaltyKeywords.length} penalty keywords`);
       }
 
-      // Smart paper extraction: pre-extract paper blocks from emails
-      // This allows batching by paper count instead of email count
-      console.log(`[Scheduler] Pre-extracting paper blocks from ${rawEmails.length} emails...`);
-      const paperBlocks = preExtractPaperBlocks(rawEmails);
-      const totalTokens = paperBlocks.reduce((sum, b) => sum + estimateTokens(b), 0);
-      console.log(`[Scheduler] Found ${paperBlocks.length} paper blocks (~${totalTokens} tokens) across ${rawEmails.length} emails`);
+      console.log(`[Scheduler] Processing ${rawEmails.length} emails...`);
 
-      // Hybrid batching: group by email + respect token limits
-      const MAX_TOKENS_PER_BATCH = 8000;  // Safe limit for LLM context
-      const MAX_PAPERS_PER_BATCH = currentConfig.batchSize;
-      const batches = batchPaperBlocksHybrid(paperBlocks, MAX_TOKENS_PER_BATCH, MAX_PAPERS_PER_BATCH);
+      // Step 1: Extract all articles using emailArticleExtractor (efficient HTML parsing)
+      console.log(`[Scheduler] Extracting articles from ${rawEmails.length} emails using ArticleExtractor...`);
+      interface ExtractedArticle {
+        title: string;
+        authors?: string;
+        abstract?: string;
+        journal: string;
+        doi?: string;
+      }
+      const allExtractedArticles: ExtractedArticle[] = [];
+
+      for (const email of rawEmails) {
+        try {
+          const articles = extractArticlesFromEmail(
+            email.body || '',
+            email.from || '',
+            email.subject || ''
+          );
+          for (const article of articles) {
+            // Skip fallback articles (entire email as one article)
+            if (article.journal === 'Unknown' && article.title === email.subject) {
+              continue;
+            }
+            allExtractedArticles.push({
+              title: article.title,
+              authors: article.authors,
+              abstract: article.abstract,
+              journal: article.journal || 'Unknown',
+              doi: article.doi
+            });
+          }
+        } catch (e) {
+          console.warn(`[Scheduler] Failed to extract from email: ${(email.subject || '').substring(0, 40)}`);
+        }
+      }
+
+      console.log(`[Scheduler] Extracted ${allExtractedArticles.length} articles from ${rawEmails.length} emails`);
+
+      // Step 2: Batch extracted articles for scoring
+      const batches: ExtractedArticle[][] = [];
+      for (let i = 0; i < allExtractedArticles.length; i += currentConfig.scoreBatchSize) {
+        batches.push(allExtractedArticles.slice(i, i + currentConfig.scoreBatchSize));
+      }
+
       let allPapers: Paper[] = [];
-
-      console.log(`[Scheduler] Processing ${paperBlocks.length} papers in ${batches.length} batches (max ${MAX_TOKENS_PER_BATCH} tokens, max ${MAX_PAPERS_PER_BATCH} papers per batch)...`);
+      console.log(`[Scheduler] Scoring ${allExtractedArticles.length} articles in ${batches.length} batch(es) (${currentConfig.scoreBatchSize} per batch)...`);
 
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
-        const batchTokens = batch.reduce((sum, b) => sum + estimateTokens(b), 0);
-        console.log(`[Scheduler] Processing batch ${i + 1}/${batches.length} (${batch.length} papers, ~${batchTokens} tokens)...`);
-
-        const rawContent = blocksToContent(batch);
+        console.log(`[Scheduler] Scoring batch ${i + 1}/${batches.length} (${batch.length} articles)...`);
 
         try {
-          const result = await processScholarEmailsLightweight(rawContent, keywords, currentConfig.analysisLimit, penaltyKeywords);
+          const result = await scoreExtractedArticles(batch, keywords, currentConfig.analysisLimit, penaltyKeywords);
 
-          // Filter papers by minScore immediately after each batch extraction
-          // This prevents accumulating too many low-relevance papers (e.g., from large bioRxiv emails)
+          // Filter papers by minScore immediately after each batch
           const filteredBatchPapers = result.papers.filter(p => p.relevanceScore >= currentConfig.minScore);
           allPapers = [...allPapers, ...filteredBatchPapers];
-          console.log(`[Scheduler] Batch ${i + 1} complete: found ${result.papers.length} papers, ${filteredBatchPapers.length} above minScore (${currentConfig.minScore})`);
+          console.log(`[Scheduler] Batch ${i + 1} complete: ${result.papers.length} scored, ${filteredBatchPapers.length} above minScore (${currentConfig.minScore})`);
         } catch (batchError) {
-          console.error(`[Scheduler] Error processing batch ${i + 1}:`, batchError);
+          console.error(`[Scheduler] Error scoring batch ${i + 1}:`, batchError);
           // Continue to next batch even if this one failed
         }
 
-        // Add delay between batches (except after the last one)
+        // Add delay between batches to avoid rate limiting
         if (i < batches.length - 1 && currentConfig.batchDelaySeconds > 0) {
           console.log(`[Scheduler] Waiting ${currentConfig.batchDelaySeconds}s before next batch...`);
-          await delay(currentConfig.batchDelaySeconds * 1000);
+          await new Promise(resolve => setTimeout(resolve, currentConfig.batchDelaySeconds * 1000));
         }
       }
 
@@ -861,13 +904,8 @@ async function generateDailyReport(): Promise<void> {
 
   // Generate Literature Review
   // Filter papers by minScore to ensure only relevant papers are included in the review
+  // Papers are already sorted by relevance score (descending)
   let reviewPapers = papers.filter(p => p.relevanceScore >= currentConfig.minScore);
-
-  // Truncate to top N papers if reviewPaperLimit is set (papers already sorted by relevance)
-  if (currentConfig.reviewPaperLimit > 0 && reviewPapers.length > currentConfig.reviewPaperLimit) {
-    console.log(`[Scheduler] Truncating from ${reviewPapers.length} to top ${currentConfig.reviewPaperLimit} papers for review`);
-    reviewPapers = reviewPapers.slice(0, currentConfig.reviewPaperLimit);
-  }
 
   console.log(`[Scheduler] Starting Literature Review generation with ${reviewPapers.length} papers...`);
   let generatedReview = '';

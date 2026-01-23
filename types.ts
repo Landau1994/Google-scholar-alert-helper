@@ -44,6 +44,7 @@ export interface AppSettings {
   weeklyGoal: number;
   batchSize: number;
   minScore: number;
+  scoreBatchSize: number; // Number of articles to score per API call
   // Scheduling settings
   schedulerEnabled: boolean;
   schedulerTime: string; // HH:mm format

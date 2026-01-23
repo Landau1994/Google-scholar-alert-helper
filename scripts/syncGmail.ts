@@ -216,12 +216,26 @@ export async function syncGmailEmails(hours: number = 24, limit: number = 200): 
       return null;
     }
 
+    // Deduplicate emails by subject (same subject = duplicate alert)
+    const seenSubjects = new Set<string>();
+    const uniqueEmails = emails.filter(email => {
+      if (seenSubjects.has(email.subject)) {
+        return false;
+      }
+      seenSubjects.add(email.subject);
+      return true;
+    });
+
+    if (uniqueEmails.length < emails.length) {
+      console.log(`[GmailSync] Removed ${emails.length - uniqueEmails.length} duplicate emails`);
+    }
+
     // Save to sync file
     const filename = `sync-${Date.now()}.json`;
     const filepath = path.join(syncedEmailsDir, filename);
-    fs.writeFileSync(filepath, JSON.stringify(emails, null, 2));
+    fs.writeFileSync(filepath, JSON.stringify(uniqueEmails, null, 2));
 
-    console.log(`[GmailSync] Saved ${emails.length} emails to ${filename}`);
+    console.log(`[GmailSync] Saved ${uniqueEmails.length} emails to ${filename}`);
     return filepath;
   } catch (e) {
     console.error('[GmailSync] Sync failed:', e);

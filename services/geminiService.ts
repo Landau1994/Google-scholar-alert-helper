@@ -2,6 +2,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Paper, DigestSummary } from "../types.ts";
 import { logger } from "../utils/logger.ts";
+import { extractArticlesFromEmail, type ExtractedArticle } from "./emailArticleExtractor.ts";
 
 // Note: Proxy is configured in scripts/loadEnv.ts which replaces globalThis.fetch
 // The Google SDK should use the global fetch which is already proxy-aware
@@ -56,32 +57,89 @@ const SOURCE_MAP: Record<string, string> = {
  * Source-based weight multipliers for relevance scores.
  * Higher multipliers for peer-reviewed prestigious journals,
  * lower multipliers for preprints and general search results.
+ *
+ * Tier structure:
+ * - 1.5x: Flagship journals (Nature, Cell, Science)
+ * - 1.3x: Top-tier journals and Nature/Science subsidiary journals
+ * - 1.2x: High-quality specialty journals, Cell Press subsidiary journals, AHA journals
+ * - 1.1x: Major publishers
+ * - 0.75x: Mega-journals
+ * - 0.6x: Preprints
+ * - 0.5x: Low-impact open access
+ * - 0.2x: Unknown sources
  */
 const SOURCE_WEIGHT_MULTIPLIERS: Record<string, number> = {
-  'Nature': 1.3,           // Prestigious peer-reviewed
+  // Flagship journals
+  'Nature': 1.5,
+  'Cell': 1.5,
+  'Science': 1.5,
+
+  // Top-tier journals
+  'The Lancet': 1.3,
+  'NEJM': 1.3,
+
+  // Nature subsidiary journals
   'Nature Communications': 1.3,
   'Nature Medicine': 1.3,
   'Nature Genetics': 1.3,
-  'Cell': 1.3,             // Prestigious peer-reviewed
-  'Cell Press': 1.3,
-  'Cell Systems': 1.3,
-  'Cell Reports': 1.3,
-  'Science': 1.3,          // Prestigious peer-reviewed
-  'PNAS': 1.2,             // Prestigious peer-reviewed
-  'Circulation': 1.2,      // AHA top journal
-  'Circulation Research': 1.2,
-  'AHA Journals': 1.2,     // Peer-reviewed specialty
-  'Elsevier': 1.1,         // Peer-reviewed publisher
-  'Springer': 1.1,         // Peer-reviewed publisher
-  'Scientific Reports': 0.75, // Mega-journal, lower selectivity
-  'Frontiers': 0.5,        // Low-impact, open access
-  'MDPI': 0.5,             // Low-impact, open access
-  'Hindawi': 0.45,         // Low-impact
-  'bioRxiv': 0.6,          // Preprints (not peer-reviewed)
-  'medRxiv': 0.6,          // Preprints (not peer-reviewed)
-  'bioRxiv/medRxiv': 0.6,  // Preprints (not peer-reviewed)
-  'Google Scholar': 0.7,   // Mixed quality, general search
-  'Unknown Source': 0.3,   // Default for unknown sources
+
+  // Cell Press flagship journals (sister journals to Cell)
+  'Immunity': 1.3,
+  'Neuron': 1.3,
+  'Developmental Cell': 1.3,
+  'Molecular Cell': 1.3,
+  'Cancer Cell': 1.3,
+
+  // Cell Press subsidiary journals
+  'Cell Press': 1.2,
+  'Cell Systems': 1.2,
+  'Cell Reports': 1.2,
+  'Cell Stem Cell': 1.2,
+  'Cell Metabolism': 1.2,
+  'Cell Genomics': 1.2,
+  'Cell Chemical Biology': 1.2,
+  'Cell Host & Microbe': 1.2,
+  'Structure': 1.2,
+  'iScience': 1.2,
+  'STAR Protocols': 1.2,
+
+  // High-quality specialty journals
+  'PNAS': 1.2,
+  'JAMA': 1.2,
+
+  // AHA flagship journals (higher tier)
+  'Circulation': 1.3,
+  'Circulation Research': 1.3,
+
+  // AHA subsidiary journals (lower tier)
+  'Hypertension': 1.2,
+  'Stroke': 1.2,
+  'Arteriosclerosis, Thrombosis, and Vascular Biology': 1.2,
+  'AHA Journals': 1.2,
+
+  // Major publishers
+  'Elsevier': 1.1,
+  'Springer': 1.1,
+
+  // Mega-journals
+  'Scientific Reports': 0.75,
+
+  // Preprints
+  'bioRxiv': 0.6,
+  'medRxiv': 0.6,
+  'bioRxiv/medRxiv': 0.6,
+
+  // Low-impact open access
+  'Frontiers': 0.5,
+  'MDPI': 0.5,
+  'Hindawi': 0.45,
+  'iCell': 0.4,
+
+  // Mixed quality search
+  'Google Scholar': 0.7,
+
+  // Unknown
+  'Unknown Source': 0.2,
 };
 
 /**
@@ -96,16 +154,55 @@ export const getSourceMultiplier = (source: string): number => {
     return SOURCE_WEIGHT_MULTIPLIERS[source];
   }
 
-  // Fuzzy matching for known high-quality sources
-  if (lowerSource.includes('nature')) return 1.3;
-  if (lowerSource.includes('cell') && !lowerSource.includes('single-cell')) return 1.3;
-  // Strict matching for "Science" journal - must be exact or start with "Science " (e.g., "Science Translational Medicine")
-  if (lowerSource === 'science' || lowerSource.startsWith('science ') || lowerSource.startsWith('science,')) return 1.3;
-  if (lowerSource.includes('circulation')) return 1.2;
+  // FLAGSHIP JOURNALS - Highest tier (1.5x)
+  // Exact match only for flagship journals to distinguish from subsidiary journals
+  if (lowerSource === 'nature') return 1.5;
+  if (lowerSource === 'cell') return 1.5;
+  if (lowerSource === 'science') return 1.5;
+
+  // Top-tier journals (1.3x)
   if (lowerSource.includes('lancet')) return 1.3;
-  if (lowerSource.includes('nejm') || lowerSource.includes('new england')) return 1.3;
-  if (lowerSource.includes('jama')) return 1.2;
+  if (lowerSource.includes('nejm') || lowerSource.includes('new england journal of medicine')) return 1.3;
+
+  // Nature subsidiary journals (1.3x)
+  if (lowerSource.startsWith('nature ') || lowerSource.includes('nature communications') ||
+      lowerSource.includes('nature medicine') || lowerSource.includes('nature genetics')) return 1.3;
+
+  // Cell Press flagship journals (1.3x)
+  if (lowerSource.includes('immunity')) return 1.3;
+  if (lowerSource.includes('neuron')) return 1.3;
+  if (lowerSource.includes('developmental cell')) return 1.3;
+  if (lowerSource.includes('molecular cell')) return 1.3;
+  if (lowerSource.includes('cancer cell')) return 1.3;
+
+  // Cell Press subsidiary journals (1.2x)
+  if (lowerSource.includes('cell stem cell') || lowerSource.includes('cell reports') ||
+      lowerSource.includes('cell metabolism') || lowerSource.includes('cell systems') ||
+      lowerSource.includes('cell genomics') || lowerSource.includes('cell chemical biology') ||
+      lowerSource.includes('cell host') || lowerSource.includes('iscience') ||
+      lowerSource.includes('star protocols') || lowerSource.includes('structure')) return 1.2;
+
+  // Science subsidiary journals (1.3x)
+  if (lowerSource.startsWith('science ') || lowerSource.includes('science translational') ||
+      lowerSource.includes('science immunology') || lowerSource.includes('science signaling')) return 1.3;
+
+  // High-quality specialty journals (1.2x)
   if (lowerSource.includes('pnas')) return 1.2;
+  if (lowerSource.includes('jama')) return 1.2;
+
+  // AHA flagship journals (1.3x) - must check before subsidiaries
+  if (lowerSource === 'circulation' || lowerSource === 'circulation research') return 1.3;
+  if (lowerSource.includes('circulation research')) return 1.3;
+
+  // AHA subsidiary journals (1.2x)
+  if (lowerSource.includes('hypertension')) return 1.2;
+  if (lowerSource.includes('stroke')) return 1.2;
+  if (lowerSource.includes('arteriosclerosis') || lowerSource.includes('atvb')) return 1.2;
+
+  // Generic Circulation match (for variations) (1.3x)
+  if (lowerSource.includes('circulation')) return 1.3;
+
+  // AHA Journals (general fallback) (1.2x)
   if (lowerSource.includes('aha') || lowerSource.includes('heart')) return 1.2;
 
   // Known preprint servers
@@ -118,6 +215,7 @@ export const getSourceMultiplier = (source: string): number => {
   if (lowerSource.includes('frontiers')) return 0.5;
   if (lowerSource.includes('mdpi')) return 0.5;
   if (lowerSource.includes('hindawi')) return 0.45;
+  if (lowerSource.includes('icell')) return 0.4;
   if (lowerSource.includes('scientific reports')) return 0.75;
 
   // Conference papers (usually less rigorous than journals)
@@ -147,6 +245,30 @@ const applySourceWeight = (paper: Paper): Paper => {
  */
 const applySourceWeights = (papers: Paper[]): Paper[] => {
   return papers.map(applySourceWeight);
+};
+
+/**
+ * Apply keyword adjustments to all papers in array
+ * This adds deterministic bonus/penalty points based on keyword matches
+ */
+const applyKeywordAdjustments = (papers: Paper[], keywords: string[], penaltyKeywords: string[] = []): Paper[] => {
+  return papers.map(paper => {
+    const { bonus, matchedKeywords, matchedPenalties } = calculateKeywordBonus(
+      paper.title,
+      paper.snippet || '',
+      keywords,
+      penaltyKeywords
+    );
+
+    // Apply bonus to relevance score (capped at 0-100)
+    const adjustedScore = Math.max(0, Math.min(100, paper.relevanceScore + bonus));
+
+    return {
+      ...paper,
+      relevanceScore: adjustedScore,
+      matchedKeywords: matchedKeywords.length > 0 ? matchedKeywords : paper.matchedKeywords
+    };
+  });
 };
 
 /**
@@ -903,6 +1025,14 @@ const executeWithRetry = async <T>(
         continue;
       }
 
+      // For network errors, wait progressively longer
+      if (parsed.type === 'network' && attempt < maxRetries) {
+        const waitTime = Math.min(2000 * Math.pow(2, attempt), 60000); // 4s, 8s, 16s, max 60s
+        logger.warn(`Network error. Waiting ${waitTime}ms before retry...`);
+        await delay(waitTime);
+        continue;
+      }
+
       // For other errors, brief delay before retry
       if (attempt < maxRetries) {
         await delay(1000 * attempt);
@@ -916,98 +1046,169 @@ const executeWithRetry = async <T>(
 export const processScholarEmails = async (
   rawEmails: string,
   keywords: string[],
-  maxPapers: number = 200
+  maxPapers: number = 200,
+  penaltyKeywords: string[] = []
 ): Promise<{ papers: Paper[], summary: DigestSummary }> => {
-  // Step 0: Pre-process emails from sources without abstracts to save tokens
-  // Split by email delimiter, process each, then rejoin
-  const emailDelimiter = /--- EMAIL ID: [^\n]+ ---/g;
-  const emailParts = rawEmails.split(emailDelimiter);
-  const emailHeaders = rawEmails.match(emailDelimiter) || [];
-  
-  let processedEmails = '';
-  let simplifiedCount = 0;
-  
-  for (let i = 0; i < emailParts.length; i++) {
-    const part = emailParts[i];
-    const header = i > 0 ? emailHeaders[i - 1] : '';
-    
-    // Check if this email is from a source without abstracts
-    const noAbstractSource = getSourceWithoutAbstract(part);
-    
-    if (noAbstractSource && part.trim()) {
-      // Simplify this email to save tokens
-      const simplified = simplifyNoAbstractEmail(part, noAbstractSource);
-      processedEmails += header + '\n' + simplified;
-      simplifiedCount++;
-    } else {
-      processedEmails += header + part;
+  // NEW: Use ArticleExtractor for intelligent pre-processing
+  // This extracts exact titles from HTML structure, reducing content by ~98%
+
+  interface ExtractedArticleInfo {
+    title: string;
+    authors?: string;
+    abstract?: string;
+    doi?: string;
+    journal: string;
+  }
+
+  const allExtractedArticles: ExtractedArticleInfo[] = [];
+
+  // Parse email sections and extract articles using cheerio
+  const emailBoundary = /--- EMAIL ID: ([^\n]+) ---/g;
+  const sections = rawEmails.split(emailBoundary);
+
+  for (let i = 1; i < sections.length; i += 2) {
+    const emailBody = sections[i + 1] || '';
+    if (!emailBody.trim()) continue;
+
+    // Extract email metadata
+    const fromMatch = emailBody.match(/From:\s*([^\n]+)/i);
+    const subjectMatch = emailBody.match(/Subject:\s*([^\n]+)/i);
+    const fromLine = fromMatch ? fromMatch[1] : '';
+    const subjectLine = subjectMatch ? subjectMatch[1] : '';
+
+    try {
+      const extractedArticles = extractArticlesFromEmail(emailBody, fromLine, subjectLine);
+      for (const article of extractedArticles) {
+        allExtractedArticles.push({
+          title: article.title,
+          authors: article.authors,
+          abstract: article.abstract,
+          doi: article.doi,
+          journal: article.journal || 'Unknown'
+        });
+      }
+    } catch (extractError: any) {
+      logger.warn(`Article extraction failed for ${fromLine.substring(0, 30)}, will use raw content`);
     }
   }
-  
-  if (simplifiedCount > 0) {
-    logger.info(`Simplified ${simplifiedCount} emails from sources without abstracts`);
+
+  logger.info(`[ArticleExtractor] Pre-extracted ${allExtractedArticles.length} articles from emails`);
+
+  // Build optimized content from extracted articles
+  let structuredContent = '';
+  let linkMap = new Map<string, string>();
+  let snippetMap = new Map<string, string>();
+  const hasExtractedArticles = allExtractedArticles.length > 0;
+
+  if (hasExtractedArticles) {
+    // Use extracted articles - more token-efficient and accurate
+    structuredContent = allExtractedArticles.map((article, idx) => {
+      let articleBlock = `--- ARTICLE ${idx + 1} ---\n`;
+      articleBlock += `TITLE: ${article.title}\n`;
+      articleBlock += `SOURCE: ${article.journal}\n`;
+      if (article.authors) articleBlock += `AUTHORS: ${article.authors}\n`;
+      if (article.abstract) articleBlock += `ABSTRACT: ${article.abstract}\n`;
+      if (article.doi) articleBlock += `DOI: ${article.doi}\n`;
+      return articleBlock;
+    }).join('\n\n');
+  } else {
+    // Fallback to old preprocessing if extraction found nothing
+    logger.warn('[ArticleExtractor] No articles extracted, falling back to raw preprocessing');
+
+    const emailDelimiter = /--- EMAIL ID: [^\n]+ ---/g;
+    const emailParts = rawEmails.split(emailDelimiter);
+    const emailHeaders = rawEmails.match(emailDelimiter) || [];
+
+    let processedEmails = '';
+    for (let i = 0; i < emailParts.length; i++) {
+      const part = emailParts[i];
+      const header = i > 0 ? emailHeaders[i - 1] : '';
+      const noAbstractSource = getSourceWithoutAbstract(part);
+
+      if (noAbstractSource && part.trim()) {
+        processedEmails += header + '\n' + simplifyNoAbstractEmail(part, noAbstractSource);
+      } else {
+        processedEmails += header + part;
+      }
+    }
+
+    const linkResult = preprocessLinks(processedEmails);
+    linkMap = linkResult.linkMap;
+    const snippetResult = preprocessSnippets(linkResult.processedContent);
+    snippetMap = snippetResult.snippetMap;
+    structuredContent = snippetResult.processedContent;
   }
-  
-  // Step 1: Pre-process URLs → [L0], [L1], ...
-  const { processedContent: contentWithLinkPlaceholders, linkMap } = preprocessLinks(processedEmails);
-  
-  // Step 2: Pre-process snippets → [S0], [S1], ...
-  const { processedContent: finalContent, snippetMap } = preprocessSnippets(contentWithLinkPlaceholders);
-  
-  const prompt = `
+
+  // Build prompt based on whether we have extracted articles or raw content
+  const prompt = hasExtractedArticles ? `
+    Analyze the following pre-extracted academic papers from email alerts.
+
+    **IMPORTANT: TITLES ARE PRE-EXTRACTED**
+    - The TITLE field for each article has been extracted directly from the email HTML.
+    - You MUST use these titles EXACTLY as provided - do NOT modify, paraphrase, or "improve" them.
+    - Copy the title character-for-character into your output.
+
+    **YOUR TASKS:**
+    1. For each article, create a paper entry with the EXACT title provided.
+    2. Parse the AUTHORS field (if present) into an array of up to 3 author names.
+    3. Use the SOURCE field as the paper's source.
+    4. Use the ABSTRACT field (if present) as the snippet, otherwise use empty string "".
+    5. **Score** each paper based on relevance to these keywords: ${keywords.join(", ")}.
+       - 80-100: Directly addresses keywords
+       - 60-79: Contains related terms/concepts
+       - 40-59: Tangentially related
+       - 20-39: Weak connection
+       - 0-19: Not relevant
+    6. Include ALL papers regardless of relevance score (we filter later).
+    7. SORT papers by relevance score descending.
+    8. Generate a cohesive summary and academic-style review report.
+
+    **EXTRACTED ARTICLES:**
+    ${structuredContent}
+  ` : `
     Analyze the following raw content from academic alert emails (e.g., Google Scholar, openRxiv, Nature Alerts).
 
     **IMPORTANT TOKEN-SAVING PLACEHOLDERS:**
     - Text snippets/descriptions have been replaced with placeholders like [S0], [S1], etc.
 
-    **SOURCE DETECTION - Use the "From:" field to determine source:**
-    - scholaralerts-noreply@google.com → "Google Scholar"
-    - openRxiv-mailer@alerts.highwire.org → "bioRxiv/medRxiv"
-    - cellpress@notification.elsevier.com → "Cell Press"
-    - ealert@nature.com or alerts@nature.com → "Nature"
-    - ahajournals@ealerts.heart.org → "AHA Journals"
-    - For unknown senders, use the domain name as source
+    **SOURCE DETECTION:**
+    1. **Google Scholar emails**: Extract the ACTUAL journal/conference name from the citation line.
+       - Citation format: "Authors - Journal Name, Year" or "Authors - Conference Name, Year"
+       - Extract the text between the first " - " and the year (4-digit number like 2025, 2026)
+       - Examples:
+         * "L Simone, YF Ferrari Chen - Applied Artificial Intelligence, 2026" → source: "Applied Artificial Intelligence"
+         * "J Smith - Nature Communications, 2025" → source: "Nature Communications"
+         * "A Chen - bioRxiv 2026" → source: "bioRxiv"
+       - Validation rules:
+         * Must be longer than 3 characters
+         * Should not be just numbers or punctuation (like "123", "...")
+         * Should not contain ellipsis "..." or "…" (indicates truncated text)
+         * If invalid, fallback to "Google Scholar"
+       - IMPORTANT: "Google Scholar" is NOT a valid journal name - always extract the actual source
+
+    2. **Nature emails**: Check the "Subject:" field for specific Nature journal names:
+       - "Nature Medicine", "Nature Aging", "Nature Communications", "Nature Genetics", etc.
+       - If subject contains a Nature journal name, use that as the source
+       - Otherwise use "Nature"
+
+    3. **Other sources**: Use the "From:" field:
+       - openRxiv-mailer@alerts.highwire.org → "bioRxiv/medRxiv"
+       - cellpress@notification.elsevier.com → "Cell Press"
+       - ahajournals@ealerts.heart.org → "AHA Journals"
+       - For unknown senders, use the domain name
 
     **SOURCES WITHOUT ABSTRACTS:**
     - bioRxiv/medRxiv, AHA Journals, and Cell Press emails typically do NOT contain abstracts/snippets.
-    - Emails marked with [SOURCE_NO_ABSTRACT: xxx] have been pre-identified as no-abstract sources.
     - For papers from these sources, use an **empty string ""** for the snippet field.
-    - Do NOT try to generate or invent snippets for these sources.
 
-    1. **Extract ALL academic papers mentioned.**
-       - For standard alerts, extract the recommended papers.
-       - **CRITICAL:** For 'New citation' or 'Citations to my articles' emails, extract the **citing** papers listed in the email body (do NOT extract the user's paper that was cited).
-       - **TARGET:** Aim to extract and analyze **at least 50 papers** if they exist in the provided content. Do NOT provide a short list if more papers are available.
-       - **EXTRACT EVERY SINGLE PAPER** found in the content, up to a maximum of ${maxPapers} papers. Do NOT arbitrarily limit the output.
-       - **IMPORTANT:** Even if a paper seems irrelevant to the keywords, **EXTRACT IT ANYWAY**. We will filter or score it later. Do not self-censor.
-    2. For each paper, identify: title, authors, snippet/description, and **source**.
-       - **SNIPPET**: Use the snippet placeholder (e.g., [S0], [S1]) that appears near the paper as its description.
-         * Return just the placeholder (e.g., "[S5]") as the snippet value.
-         * If NO snippet placeholder is present near a paper, return an **empty string ""**.
-         * **Do NOT generate or invent snippets** - only use placeholders that exist in the content.
-         * For bioRxiv/medRxiv, AHA Journals, and Cell Press sources, snippets are unavailable - always use "".
-       - **AUTHORS**: Extract at most **3 authors**. If there are more, use the first 3. Do NOT include "et al." in the array.
-       - **SOURCE**: Look at the "From:" line in the email section where this paper appears. Map the sender to the source name using the rules above.
-    3. **Score** these papers based on their relevance to these keywords: ${keywords.join(", ")}.
-       - You are an academic paper relevance scorer. Assign a 'relevanceScore' from 0 to 100 using these criteria:
-         * 80-100: Title/abstract directly addresses one or more keywords (e.g., paper about "organoid development" matches "organoid")
-         * 60-79: Title/abstract contains related terms or concepts (e.g., "aortic aneurysm" relates to "Aortic Disease", "Marfan" relates to "Marfan Syndrome")
-         * 40-59: Tangentially related to the research areas (e.g., general cardiovascular paper when keywords include "vascular")
-         * 20-39: Weak connection to keywords (e.g., uses similar techniques but different disease area)
-         * 0-19: Not relevant to the keywords
-       - **IMPORTANT:** Do NOT filter out or omit papers that do not match the keywords. Include them with a lower score (e.g., 0-19) if they are unrelated.
-    4. SORT the papers by their relevance score in descending order (highest score first).
-    5. Generate a cohesive summary of the research trends found in these emails.
-    6. **Generate a detailed, academic-style review report** ('academicReport').
-       - Structure it like a mini-review paper.
-       - **Categorize by Keywords**: Create sections for each relevant keyword found.
-       - **Synthesis**: Within each section, synthesize the findings from the papers, discussing how they relate to each other.
-       - **Citations**: Use inline citations for every claim (e.g., "Smith et al. (2024) proposed...").
-       - **Conclusion**: Briefly summarize the overall direction of the field.
-       - Do NOT include a "References" list at the end (this will be appended programmatically).
+    1. **Extract ALL academic papers mentioned** up to ${maxPapers} papers.
+    2. For each paper: title, authors (max 3), snippet (placeholder or ""), source.
+    3. **Score** relevance to keywords: ${keywords.join(", ")} (0-100 scale).
+    4. SORT by relevance score descending.
+    5. Generate summary and academic-style review report.
 
     Content:
-    ${finalContent}
+    ${structuredContent}
   `;
 
   const generate = async (modelName: string) => {
@@ -1067,8 +1268,8 @@ export const processScholarEmails = async (
   };
 
   // Check if content is too large and needs chunking
-  const estimatedTokens = estimateTokens(finalContent);
-  logger.info(`Estimated tokens for content: ${estimatedTokens}`);
+  const estimatedTokens = estimateTokens(structuredContent);
+  logger.info(`Estimated tokens for content: ${estimatedTokens}${hasExtractedArticles ? ' (using extracted articles)' : ''}`);
 
   if (estimatedTokens > MAX_INPUT_TOKENS) {
     logger.warn(`Content exceeds token limit (${estimatedTokens} > ${MAX_INPUT_TOKENS}), processing in chunks...`);
@@ -1085,13 +1286,27 @@ export const processScholarEmails = async (
     }, modelName, maxRetries);
   };
 
+  // Helper to process result based on whether we used extracted articles
+  const processResult = (result: any) => {
+    if (hasExtractedArticles) {
+      // No placeholder restoration needed - titles/abstracts are already in final form
+      result.papers = applySourceWeights(result.papers);
+      result.papers = applyKeywordAdjustments(result.papers, keywords, penaltyKeywords);
+    } else {
+      // Restore placeholders for raw content processing
+      result.papers = restoreData(result.papers, linkMap, snippetMap);
+      result.papers = applySourceWeights(result.papers);
+      result.papers = applyKeywordAdjustments(result.papers, keywords, penaltyKeywords);
+    }
+    return result;
+  };
+
   try {
     // Try primary model first with retry
     try {
       const result = await generateWithRetry('gemini-3-flash-preview');
-      result.papers = restoreData(result.papers, linkMap, snippetMap);
-      result.papers = applySourceWeights(result.papers);
-      logger.success(`Successfully extracted ${result.papers.length} papers (with source weights applied)`);
+      processResult(result);
+      logger.success(`Successfully extracted ${result.papers.length} papers (with source weights + keyword adjustments)`);
       return result;
     } catch (primaryError: any) {
       const parsed = parseGeminiError(primaryError);
@@ -1112,8 +1327,7 @@ export const processScholarEmails = async (
       // Fallback to pro model with retry
       try {
         const result = await generateWithRetry('gemini-3-pro-preview');
-        result.papers = restoreData(result.papers, linkMap, snippetMap);
-        result.papers = applySourceWeights(result.papers);
+        processResult(result);
         logger.success(`Successfully extracted ${result.papers.length} papers (fallback, with source weights applied)`);
         return result;
       } catch (fallbackError: any) {
@@ -1212,7 +1426,7 @@ const processInChunks = async (
   // Deduplicate papers using enhanced normalization
   const uniquePapers = deduplicatePapers(allPapers);
 
-  // Sort by relevance (source weights already applied per-chunk) and limit
+  // Sort by relevance (source weights + keyword adjustments already applied per-chunk) and limit
   const sortedPapers = uniquePapers
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
     .slice(0, maxPapers);
@@ -1235,8 +1449,8 @@ const processInChunks = async (
 
 /**
  * Lightweight version of processScholarEmails for Node.js/scheduler use.
+ * Uses ArticleExtractor for intelligent pre-processing.
  * Uses a simpler schema that works better with proxy connections.
- * Processes content in smaller chunks to avoid timeout issues.
  */
 export const processScholarEmailsLightweight = async (
   rawEmails: string,
@@ -1244,7 +1458,149 @@ export const processScholarEmailsLightweight = async (
   maxPapers: number = 200,
   penaltyKeywords: string[] = []
 ): Promise<{ papers: Paper[], summary: DigestSummary }> => {
-  logger.info('[Lightweight] Starting lightweight email processing...');
+  logger.info('[Lightweight] Starting lightweight email processing with ArticleExtractor...');
+
+  // Use ArticleExtractor for intelligent pre-processing
+  interface ExtractedArticleInfo {
+    title: string;
+    authors?: string;
+    abstract?: string;
+    doi?: string;
+    journal: string;
+  }
+
+  const allExtractedArticles: ExtractedArticleInfo[] = [];
+
+  // Parse email sections and extract articles using cheerio
+  const emailBoundary = /--- EMAIL ID: ([^\n]+) ---/g;
+  const sections = rawEmails.split(emailBoundary);
+
+  for (let i = 1; i < sections.length; i += 2) {
+    const emailBody = sections[i + 1] || '';
+    if (!emailBody.trim()) continue;
+
+    const fromMatch = emailBody.match(/From:\s*([^\n]+)/i);
+    const subjectMatch = emailBody.match(/Subject:\s*([^\n]+)/i);
+    const fromLine = fromMatch ? fromMatch[1] : '';
+    const subjectLine = subjectMatch ? subjectMatch[1] : '';
+
+    try {
+      const extractedArticles = extractArticlesFromEmail(emailBody, fromLine, subjectLine);
+      for (const article of extractedArticles) {
+        allExtractedArticles.push({
+          title: article.title,
+          authors: article.authors,
+          abstract: article.abstract,
+          doi: article.doi,
+          journal: article.journal || 'Unknown'
+        });
+      }
+      logger.info(`[Lightweight] Extracted ${extractedArticles.length} articles from ${fromLine.substring(0, 40)}`);
+    } catch (extractError: any) {
+      logger.warn(`[Lightweight] Article extraction failed for ${fromLine.substring(0, 30)}`);
+    }
+  }
+
+  logger.info(`[Lightweight] Total pre-extracted: ${allExtractedArticles.length} articles`);
+
+  // If ArticleExtractor found articles, use structured content
+  if (allExtractedArticles.length > 0) {
+    // Build structured content for AI processing
+    const structuredContent = allExtractedArticles.map((article, idx) => {
+      let block = `[${idx + 1}] TITLE: ${article.title}\n`;
+      block += `SOURCE: ${article.journal}\n`;
+      if (article.authors) block += `AUTHORS: ${article.authors}\n`;
+      if (article.abstract) block += `ABSTRACT: ${article.abstract}\n`;
+      return block;
+    }).join('\n');
+
+    const estimatedTokens = estimateTokens(structuredContent);
+    logger.info(`[Lightweight] Structured content: ${(structuredContent.length / 1024).toFixed(1)} KB (~${estimatedTokens} tokens)`);
+
+    // Single API call with all extracted articles
+    const prompt = `You are an academic paper relevance scorer. Score these pre-extracted papers.
+
+**IMPORTANT: TITLES ARE PRE-EXTRACTED - USE THEM EXACTLY AS PROVIDED**
+
+For each paper, output:
+- title: COPY the TITLE field EXACTLY (do not modify)
+- authors: COPY the AUTHORS field (or empty if not present)
+- source: COPY the SOURCE field EXACTLY
+- relevanceScore: 0-100 based on relevance to: ${keywords.join(", ")}
+  * 80-100: Directly addresses keywords
+  * 60-79: Related terms/concepts
+  * 40-59: Tangentially related
+  * 20-39: Weak connection
+  * 0-19: Not relevant
+
+**EXTRACTED ARTICLES:**
+${structuredContent}`;
+
+    const simpleSchema = {
+      type: Type.OBJECT,
+      properties: {
+        papers: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              authors: { type: Type.STRING },
+              source: { type: Type.STRING },
+              relevanceScore: { type: Type.NUMBER }
+            }
+          }
+        }
+      }
+    };
+
+    try {
+      const response = await executeWithRetry(async () => {
+        return await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: prompt,
+          config: { responseMimeType: "application/json", responseSchema: simpleSchema }
+        });
+      }, 'gemini-3-flash-preview', 3);
+
+      const jsonStr = response.text;
+      if (!jsonStr) throw new Error("Empty response");
+
+      const result = JSON.parse(jsonStr.trim());
+      const papers: Paper[] = (result.papers || []).map((p: any, idx: number) => ({
+        id: `paper-${Date.now()}-${idx}`,
+        title: p.title || '',
+        authors: p.authors ? p.authors.split(',').map((a: string) => a.trim()).slice(0, 3) : [],
+        snippet: '',
+        source: p.source || 'Unknown',
+        date: new Date().toISOString().split('T')[0],
+        relevanceScore: p.relevanceScore || 0,
+        matchedKeywords: []
+      }));
+
+      // Apply source weights and keyword adjustments
+      const weightedPapers = applySourceWeights(papers);
+      const adjustedPapers = applyKeywordAdjustments(weightedPapers, keywords, penaltyKeywords);
+
+      logger.success(`[Lightweight] Extracted ${adjustedPapers.length} papers with ArticleExtractor`);
+
+      return {
+        papers: adjustedPapers.sort((a, b) => b.relevanceScore - a.relevanceScore),
+        summary: {
+          overview: `Processed ${adjustedPapers.length} papers from ${allExtractedArticles.length} extracted articles.`,
+          academicReport: '',
+          keyTrends: [],
+          topRecommendations: [],
+          categorizedPapers: []
+        }
+      };
+    } catch (error: any) {
+      logger.warn(`[Lightweight] ArticleExtractor approach failed, falling back to chunking: ${error.message}`);
+    }
+  }
+
+  // Fallback: Original chunking approach if ArticleExtractor didn't work
+  logger.info('[Lightweight] Using fallback chunking approach...');
 
   // Pre-process emails from sources without abstracts
   const emailDelimiter = /--- EMAIL ID: [^\n]+ ---/g;
@@ -1313,8 +1669,8 @@ export const processScholarEmailsLightweight = async (
   const contentChunks: ChunkWithSource[] = [];
 
   // First, split by email boundaries to preserve source information
-  const emailBoundary = /--- EMAIL ID: [^\n]+ ---/g;
-  const emailSections = finalContent.split(emailBoundary).filter(s => s.trim());
+  const fallbackBoundary = /--- EMAIL ID: [^\n]+ ---/g;
+  const emailSections = finalContent.split(fallbackBoundary).filter(s => s.trim());
 
   for (const section of emailSections) {
     const source = detectSourceFromContent(section);
@@ -1493,16 +1849,17 @@ ${chunk.content}`;
     }
   }
 
-  // Deduplicate and apply source weights
+  // Deduplicate, apply source weights, and apply keyword adjustments
   const dedupedPapers = deduplicatePapers(allPapers);
   const weightedPapers = applySourceWeights(dedupedPapers);
+  const adjustedPapers = applyKeywordAdjustments(weightedPapers, keywords, penaltyKeywords);
 
   // Sort by relevance and limit
-  const sortedPapers = weightedPapers
+  const sortedPapers = adjustedPapers
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
     .slice(0, maxPapers);
 
-  logger.success(`[Lightweight] Complete: ${sortedPapers.length} unique papers`);
+  logger.success(`[Lightweight] Complete: ${sortedPapers.length} unique papers (with source weights + keyword adjustments)`);
 
   return {
     papers: sortedPapers,
@@ -1516,20 +1873,336 @@ ${chunk.content}`;
   };
 };
 
+/**
+ * Score pre-extracted articles without re-running ArticleExtractor.
+ * This is used by the scheduler after it extracts articles using emailArticleExtractor.
+ * Much more efficient than processScholarEmailsLightweight for pre-extracted content.
+ */
+export interface PreExtractedArticle {
+  title: string;
+  authors?: string;
+  abstract?: string;
+  journal: string;
+  doi?: string;
+}
+
+export const scoreExtractedArticles = async (
+  articles: PreExtractedArticle[],
+  keywords: string[],
+  maxPapers: number = 200,
+  penaltyKeywords: string[] = []
+): Promise<{ papers: Paper[] }> => {
+  if (articles.length === 0) {
+    return { papers: [] };
+  }
+
+  logger.info(`[ScoreArticles] Scoring ${articles.length} pre-extracted articles...`);
+
+  // Log source distribution for debugging
+  const sourceCount = new Map<string, number>();
+  articles.forEach(article => {
+    const source = article.journal || 'Unknown';
+    sourceCount.set(source, (sourceCount.get(source) || 0) + 1);
+  });
+  logger.info(`[ScoreArticles] Source distribution: ${JSON.stringify(Array.from(sourceCount.entries()))}`);
+
+  // Build structured content for AI processing
+  const structuredContent = articles.map((article, idx) => {
+    let block = `[${idx + 1}] TITLE: ${article.title}\n`;
+    block += `SOURCE: ${article.journal}\n`;
+    if (article.authors) block += `AUTHORS: ${article.authors}\n`;
+    if (article.abstract) block += `ABSTRACT: ${article.abstract}\n`;
+    return block;
+  }).join('\n');
+
+  const estimatedTokens = estimateTokens(structuredContent);
+  logger.info(`[ScoreArticles] Content: ${(structuredContent.length / 1024).toFixed(1)} KB (~${estimatedTokens} tokens)`);
+
+  const prompt = `You are an academic paper relevance scorer. Score these pre-extracted papers.
+
+**CRITICAL RULES:**
+1. Output ONLY valid JSON - NO explanations, NO reasoning, NO chain-of-thought
+2. Copy TITLE, AUTHORS, and SOURCE fields EXACTLY as provided - do not modify them
+3. Only the relevanceScore field should be your judgment (0-100)
+
+**SCORING GUIDE:**
+- 80-100: Directly addresses keywords
+- 60-79: Related terms/concepts
+- 40-59: Tangentially related
+- 20-39: Weak connection
+- 0-19: Not relevant
+
+**Keywords to evaluate against:** ${keywords.join(", ")}
+
+**EXTRACTED ARTICLES:**
+${structuredContent}`;
+
+  const simpleSchema = {
+    type: Type.OBJECT,
+    properties: {
+      papers: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING, description: "Copy exactly from TITLE field" },
+            authors: { type: Type.STRING, description: "Copy exactly from AUTHORS field" },
+            source: { type: Type.STRING, description: "Copy exactly from SOURCE field" },
+            relevanceScore: { type: Type.NUMBER, description: "0-100 relevance score" }
+          },
+          required: ["title", "source", "relevanceScore"]
+        }
+      }
+    },
+    required: ["papers"]
+  };
+
+  try {
+    const response = await executeWithRetry(async () => {
+      return await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: { responseMimeType: "application/json", responseSchema: simpleSchema }
+      });
+    }, 'gemini-3-flash-preview', 3);
+
+    const jsonStr = response.text;
+    if (!jsonStr) throw new Error("Empty response");
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (parseError: any) {
+      logger.error(`[ScoreArticles] Failed to parse JSON: ${parseError.message}`);
+      logger.error(`[ScoreArticles] Response (first 500 chars): ${jsonStr.substring(0, 500)}`);
+      throw new Error(`Invalid JSON from AI: ${parseError.message}`);
+    }
+
+    if (!parsed.papers || !Array.isArray(parsed.papers)) {
+      throw new Error("Invalid response structure - missing papers array");
+    }
+
+    logger.info(`[ScoreArticles] AI returned ${parsed.papers.length} papers`);
+
+    // Create multiple lookup keys for fuzzy matching
+    const articleMap = new Map<string, PreExtractedArticle>();
+    const normalizeTitle = (title: string): string => {
+      return title
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s]/g, '') // Remove punctuation
+        .replace(/\s+/g, ' ');   // Normalize whitespace
+    };
+
+    articles.forEach(article => {
+      // Add exact lowercase key
+      articleMap.set(article.title.toLowerCase().trim(), article);
+      // Add normalized key (no punctuation)
+      articleMap.set(normalizeTitle(article.title), article);
+    });
+
+    // Helper function to find matching article with fuzzy matching
+    const findOriginalArticle = (aiTitle: string): PreExtractedArticle | undefined => {
+      const lowerTitle = aiTitle.toLowerCase().trim();
+      const normalizedTitle = normalizeTitle(aiTitle);
+
+      // Try exact match first
+      if (articleMap.has(lowerTitle)) {
+        return articleMap.get(lowerTitle);
+      }
+
+      // Try normalized match (no punctuation)
+      if (articleMap.has(normalizedTitle)) {
+        return articleMap.get(normalizedTitle);
+      }
+
+      // Try substring matching - find article whose title contains or is contained by AI title
+      for (const article of articles) {
+        const articleLower = article.title.toLowerCase().trim();
+        const articleNorm = normalizeTitle(article.title);
+
+        // Check if one contains the other (for truncated titles)
+        if (articleLower.includes(lowerTitle) || lowerTitle.includes(articleLower)) {
+          return article;
+        }
+        if (articleNorm.includes(normalizedTitle) || normalizedTitle.includes(articleNorm)) {
+          return article;
+        }
+
+        // Check if first 50 chars match (handles slight ending differences)
+        if (articleLower.substring(0, 50) === lowerTitle.substring(0, 50)) {
+          return article;
+        }
+      }
+
+      return undefined;
+    };
+
+    const papers: Paper[] = (parsed.papers || [])
+      .map((p: any) => {
+        // First, clean any chain-of-thought reasoning that leaked into the title
+        // This happens when the AI includes its scoring rationale in the output
+        if (p.title && typeof p.title === 'string') {
+          // Patterns that indicate chain-of-thought reasoning leaked into title
+          const cotPatterns = [
+            /Reference to arterial\/vascular.*/i,
+            /Score is moderate.*/i,
+            /Score:?\s*\d+.*/i,
+            /\(Weak connection\).*/i,
+            /\(Tangentially related\).*/i,
+            /\(Related terms\).*/i,
+            /Wait,\s+.*/i,
+            /Let's use.*/i,
+            /Let's score.*/i,
+            /Actually,\s+.*/i,
+            /Adjusting to.*/i,
+            /\bRelevant as\b.*/i,
+            /\bAdjusted score\b.*/i,
+            /\bFinal selection\b.*/i,
+          ];
+
+          for (const pattern of cotPatterns) {
+            if (pattern.test(p.title)) {
+              const cleanedTitle = p.title.replace(pattern, '').trim();
+              if (cleanedTitle.length > 10 && cleanedTitle.length < p.title.length) {
+                logger.warn(`[ScoreArticles] Cleaned chain-of-thought from title: "${p.title.substring(0, 60)}..." -> "${cleanedTitle.substring(0, 60)}..."`);
+                p.title = cleanedTitle;
+              }
+            }
+          }
+        }
+
+        // Try to recover malformed papers where fields got concatenated
+        if (p.title && typeof p.title === 'string' &&
+            (p.title.includes('"authors":') || p.title.includes('"source":') || p.title.includes('"relevanceScore":'))) {
+
+          const titlePreview = p.title.length > 100 ? p.title.substring(0, 100) + '...' : p.title;
+          logger.warn(`[ScoreArticles] Attempting to recover malformed paper: ${titlePreview}`);
+
+          // Try to extract the actual title (everything before ", "authors":)
+          let actualTitle = p.title;
+          const authorsMatch = p.title.match(/^(.*?)"\s*,\s*"authors":/);
+          if (authorsMatch) {
+            actualTitle = authorsMatch[1].trim();
+          } else {
+            // Try other field separators
+            const sourceMatch = p.title.match(/^(.*?)"\s*,\s*"source":/);
+            const scoreMatch = p.title.match(/^(.*?)"\s*,\s*"relevanceScore":/);
+            if (sourceMatch) actualTitle = sourceMatch[1].trim();
+            else if (scoreMatch) actualTitle = scoreMatch[1].trim();
+          }
+
+          // Try to extract authors if present in the concatenated string
+          let actualAuthors = p.authors || '';
+          const authorsExtract = p.title.match(/"authors":\s*"([^"]+)"/);
+          if (authorsExtract) {
+            actualAuthors = authorsExtract[1];
+          }
+
+          // Try to extract source if present
+          let actualSource = p.source || '';
+          const sourceExtract = p.title.match(/"source":\s*"([^"]+)"/);
+          if (sourceExtract) {
+            actualSource = sourceExtract[1];
+          }
+
+          // Try to extract relevance score if present
+          let actualScore = p.relevanceScore || 0;
+          const scoreExtract = p.title.match(/"relevanceScore":\s*(\d+)/);
+          if (scoreExtract) {
+            actualScore = parseInt(scoreExtract[1], 10);
+          }
+
+          logger.info(`[ScoreArticles] Recovered: "${actualTitle.substring(0, 60)}${actualTitle.length > 60 ? '...' : ''}"`);
+
+          return {
+            ...p,
+            title: actualTitle,
+            authors: actualAuthors,
+            source: actualSource,
+            relevanceScore: actualScore
+          };
+        }
+
+        return p;
+      })
+      .filter((p: any) => {
+        // Now filter out papers that still don't have valid titles after recovery
+        if (!p.title || typeof p.title !== 'string' || p.title.trim() === '') {
+          logger.warn(`[ScoreArticles] Filtered paper with missing/invalid title after recovery`);
+          return false;
+        }
+        return true;
+      })
+      .map((p: any) => {
+        // Match back to original article to get snippet and link using fuzzy matching
+        const originalArticle = findOriginalArticle(p.title);
+
+        if (!originalArticle) {
+          logger.warn(`[ScoreArticles] Filtering hallucinated paper (no match in original): "${p.title.substring(0, 80)}"`);
+          return null; // Filter out hallucinated papers
+        }
+
+        // IMPORTANT: Prefer original article's journal field over AI's source
+        // The AI sometimes returns "Unknown" or doesn't preserve exact source names
+        const source = originalArticle.journal || p.source || 'Unknown';
+
+        return {
+          id: `paper-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          title: originalArticle.title, // Use original title, not AI's potentially modified version
+          authors: originalArticle.authors ? originalArticle.authors.split(/,\s*/).slice(0, 3) : (p.authors ? p.authors.split(/,\s*/).slice(0, 3) : []),
+          snippet: originalArticle.abstract || '',
+          link: originalArticle.doi ? `https://doi.org/${originalArticle.doi}` : '',
+          source: source,
+          date: new Date().toISOString().split('T')[0],
+          relevanceScore: p.relevanceScore || 0,
+          matchedKeywords: []
+        };
+      })
+      .filter((p: any) => p !== null);
+
+    const filteredCount = parsed.papers.length - papers.length;
+    if (filteredCount > 0) {
+      logger.warn(`[ScoreArticles] Filtered out ${filteredCount} malformed papers`);
+    }
+
+    // Step 1: Apply source weights (multipliers based on journal prestige)
+    const weightedPapers = applySourceWeights(papers);
+
+    // Log source weight applications for debugging
+    if (weightedPapers.length > 0) {
+      const sampleWeights = weightedPapers.slice(0, 5).map(p =>
+        `${p.source}=${getSourceMultiplier(p.source)}x`
+      );
+      logger.info(`[ScoreArticles] Sample source weights: ${sampleWeights.join(', ')}`);
+    }
+
+    // Step 2: Apply keyword bonuses and penalties (deterministic adjustments)
+    const adjustedPapers = applyKeywordAdjustments(weightedPapers, keywords, penaltyKeywords);
+
+    // Step 3: Sort by relevance and limit
+    const sortedPapers = adjustedPapers
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, maxPapers);
+
+    logger.success(`[ScoreArticles] Scored ${sortedPapers.length} papers (with source weights + keyword adjustments)`);
+
+    return { papers: sortedPapers };
+  } catch (error: any) {
+    logger.error(`[ScoreArticles] Failed: ${error.message}`);
+    throw error;
+  }
+};
+
 export const generateLiteratureReview = async (
   papers: Paper[],
   keywords: string[]
 ): Promise<string> => {
   // Clean any remaining placeholders as a safety net
   const cleanedPapers = cleanPlaceholders(papers);
-  
-  // Always use segmented approach (Plan & Parallel) for now to test robustness
-  if (cleanedPapers.length <= 0) {
-    return generateLiteratureReviewSingleShot(cleanedPapers, keywords);
-  } else {
-    // For larger sets, use the segmented approach to avoid token limits and ensure detail
-    return generateLiteratureReviewSegmented(cleanedPapers, keywords);
-  }
+
+  // Use single-shot approach for web app (simpler, no parallel complexity)
+  return generateLiteratureReviewSingleShot(cleanedPapers, keywords);
 };
 
 const generateLiteratureReviewSingleShot = async (

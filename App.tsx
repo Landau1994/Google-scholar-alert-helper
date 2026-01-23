@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   weeklyGoal: 50,
   batchSize: 20,
   minScore: 10,
+  scoreBatchSize: 50,
   schedulerEnabled: false,
   schedulerTime: '08:00',
   schedulerTimezone: 'Asia/Shanghai'
@@ -71,7 +72,8 @@ const AppContent: React.FC = () => {
           ...schedulerConfig,
           batchSize: settings.batchSize,
           analysisLimit: settings.analysisLimit,
-          minScore: settings.minScore
+          minScore: settings.minScore,
+          scoreBatchSize: settings.scoreBatchSize
         };
         await fetch('/api/scheduler-config', {
           method: 'POST',
@@ -962,6 +964,19 @@ const AppContent: React.FC = () => {
                         max="100"
                       />
                       <p className="text-xs text-slate-500 mt-2">Papers with relevance score below this threshold will be filtered out (0-100).</p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 md:col-span-2">
+                      <label className="block text-sm font-bold text-slate-700 mb-2">Scoring Batch Size (Articles)</label>
+                      <input
+                        type="number"
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        value={settings.scoreBatchSize}
+                        onChange={(e) => setSettings({ ...settings, scoreBatchSize: parseInt(e.target.value) || 50 })}
+                        min="10"
+                        max="100"
+                      />
+                      <p className="text-xs text-slate-500 mt-2">Number of articles to score per AI API call. Higher values are faster but may fail on large batches.</p>
                     </div>
                   </div>
                 </div>

@@ -502,19 +502,17 @@ export async function refineAndSave(
 
   console.log(`\n📝 Top keywords: ${reviewKeywords.join(', ')}`);
 
-  // Generate literature review using Gemini
+  // Generate literature review using Gemini (use all validated papers, already sorted by score)
   let generatedReview = '';
-  const reviewPaperLimit = 50; // Limit papers for review generation
-  const reviewPapers = validatedPapers.slice(0, reviewPaperLimit);
 
-  console.log(`📚 Generating literature review with ${reviewPapers.length} papers...`);
+  console.log(`📚 Generating literature review with ${validatedPapers.length} papers...`);
 
   try {
-    let review = await generateLiteratureReviewLightweight(reviewPapers, reviewKeywords);
+    let review = await generateLiteratureReviewLightweight(validatedPapers, reviewKeywords);
 
     // Append reference list
     let references = "\n\n---\n\n## References / 参考文献\n\n";
-    for (const [i, p] of reviewPapers.entries()) {
+    for (const [i, p] of validatedPapers.entries()) {
       const authorStr = p.authors ? p.authors.join(", ") : "Unknown";
       references += `[${i + 1}] ${authorStr}. "${p.title}". ${p.source || 'Unknown Source'}${p.date ? `, ${p.date}` : ''}.\n\n`;
     }

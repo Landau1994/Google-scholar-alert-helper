@@ -100,8 +100,7 @@ You can configure the scheduler via the web UI or by editing `scheduler.config.j
   "batchSize": 20,
   "batchDelaySeconds": 5,
   "analysisLimit": 200,
-  "minScore": 10,
-  "reviewPaperLimit": 50
+  "minScore": 10
 }
 ```
 
@@ -118,7 +117,6 @@ You can configure the scheduler via the web UI or by editing `scheduler.config.j
 | `batchDelaySeconds` | Delay between batches in seconds (helps with rate limiting, 0 = no delay) |
 | `analysisLimit` | Maximum papers to analyze per batch |
 | `minScore` | Minimum relevance score to include papers |
-| `reviewPaperLimit` | Max papers for literature review (0 = no limit, default: 50) |
 
 ### Paper Title Validation & Hallucination Detection
 
@@ -224,7 +222,7 @@ This saves API calls and processing time when you only need to regenerate the li
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │ ALWAYS: Generate daily_review_*.md                              │
-│ - Truncate to top N papers (reviewPaperLimit)                   │
+│ - Use all papers above minScore (already sorted by relevance)   │
 │ - Generate review with AI                                       │
 │ - Append reference list                                         │
 │ - Save analysis-{timestamp}.json (review papers)                │
@@ -389,8 +387,11 @@ Relevance scores are automatically adjusted based on the paper source to priorit
 
 | Source | Weight | Effect |
 |--------|--------|--------|
-| Nature, Cell, Science | 1.3x | +30% score boost |
-| PNAS, Circulation, AHA | 1.2x | +20% score boost |
+| Nature, Cell, Science | 1.5x | +50% score boost |
+| Nature Communications, Lancet, NEJM | 1.3x | +30% score boost |
+| Circulation, Circulation Research | 1.3x | +30% score boost |
+| Cell Press (Cell Reports, iScience, STAR Protocols) | 1.2x | +20% score boost |
+| PNAS, JAMA, AHA subsidiary (Hypertension, Stroke) | 1.2x | +20% score boost |
 | Elsevier, Springer | 1.1x | +10% score boost |
 | Conference/Proceedings | 0.8x | -20% score reduction |
 | Scientific Reports | 0.75x | -25% score reduction |
@@ -398,8 +399,10 @@ Relevance scores are automatically adjusted based on the paper source to priorit
 | bioRxiv/medRxiv | 0.6x | -40% score reduction |
 | Frontiers, MDPI | 0.5x | -50% score reduction |
 | Hindawi | 0.45x | -55% score reduction |
+| iCell | 0.4x | -60% score reduction |
+| Unknown sources | 0.2x | -80% score reduction |
 
-**Example**: A Frontiers paper with raw score of 60 becomes 30 after weighting (60 × 0.5), while a Nature paper with raw score 60 becomes 78 (60 × 1.3).
+**Example**: A Frontiers paper with raw score of 60 becomes 30 after weighting (60 × 0.5), while a Nature paper with raw score 60 becomes 90 (60 × 1.5).
 
 This ensures that when `minScore` filtering is applied, peer-reviewed papers from prestigious journals are more likely to be retained.
 
@@ -539,6 +542,45 @@ The app automatically detects and processes emails from these academic alert ser
 
 The Gmail query automatically searches all these sources when syncing.
 
+## Intelligent Article Extraction
+
+The app uses **cheerio** (a jQuery-like HTML parser) to intelligently extract articles from academic email alerts before sending them to the AI. This provides significant improvements in accuracy and efficiency.
+
+### How It Works
+
+```
+Raw Email HTML (1808 KB) → Cheerio Parser → Structured Articles (38 KB) → AI Processing
+```
+
+1. **Source Detection**: Identifies email source from the `From:` header
+2. **Pattern Matching**: Uses source-specific HTML patterns to extract articles
+3. **Title Extraction**: Captures exact titles from link text (no AI interpretation needed)
+4. **Content Filtering**: Removes navigation, footers, and non-article content
+5. **Structured Output**: Formats as clean `TITLE/SOURCE/AUTHORS/ABSTRACT` blocks
+
+### Source-Specific Extractors
+
+| Source | Pattern | Special Handling |
+|--------|---------|------------------|
+| Cell Press | `<a href="cell.com/fulltext">` links | Extracts title from link text |
+| Nature | `<span style="font-size:18px">` + links | Filters to Research sections only |
+| bioRxiv/medRxiv | DOI patterns, `<a href="biorxiv.org">` | Handles plain-text and HTML formats |
+| AHA Journals | `<span style="font-weight:bold">` in links | Supports nested styling |
+| Google Scholar | `<h3><a class="gse_alrt_title">` | Standard Google format |
+
+### Efficiency Gains
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Content sent to AI | 1808 KB | 38 KB | 98% reduction |
+| Estimated tokens | ~452,000 | ~9,500 | 97% saved |
+| Title accuracy | AI parses HTML | Exact from source | No hallucination |
+| Nature articles | 102 (all sections) | 31 (Research only) | 70% filtered |
+
+### Fallback Behavior
+
+If article extraction fails for any email, the system automatically falls back to the original raw HTML preprocessing (URL/snippet placeholders). This ensures robustness while still benefiting from extraction when possible.
+
 ## Testing & Debugging Scripts
 
 ### Test API Connection
@@ -579,6 +621,57 @@ The app exposes these internal API endpoints (available when running `npm run de
 | `/oauth2callback` | GET | Handle OAuth2 callback |
 
 ## Changelog
+
+### 2026-01-24
+- **Fixed**: AI hallucination filtering in scoring pipeline
+  - Papers returned by AI that don't match any original extracted article are now filtered out
+  - Prevents hallucinated papers from appearing in analysis results
+  - Uses fuzzy matching (exact, normalized, substring) to match AI output back to original articles
+- **Fixed**: Chain-of-thought reasoning leaking into paper titles
+  - AI sometimes included scoring rationale in title fields (e.g., "Paper Title Reference to arterial/vascular... Score: 45")
+  - Added pattern-based cleaning to detect and remove leaked reasoning from titles
+  - Patterns include: "Reference to...", "Score: X", "(Weak connection)", "Wait,", "Let's use", etc.
+- **Improved**: AI prompt for paper scoring
+  - Stricter instructions: "Output ONLY valid JSON - NO explanations, NO reasoning, NO chain-of-thought"
+  - Emphasizes copying TITLE, AUTHORS, and SOURCE fields EXACTLY as provided
+  - Added required fields to JSON schema for better validation
+- **Improved**: Paper title matching
+  - Now uses original article title from extraction, not AI's potentially modified version
+  - Ensures consistency between extracted and scored papers
+- **Added**: Journal weight configurations
+  - STAR Protocols: 1.2x (Cell Press subsidiary journal)
+  - iCell: 0.4x (low-quality journal)
+  - Updated fuzzy matching to handle these journal patterns
+
+### 2026-01-23 (Update 3)
+- **NEW**: Intelligent Article Extraction with Cheerio HTML Parser
+  - Added `emailArticleExtractor.ts` using cheerio for semantic HTML parsing
+  - Extracts exact paper titles directly from HTML structure (prevents AI hallucination)
+  - Source-specific extractors for: Cell Press, Nature, bioRxiv/medRxiv, AHA Journals, Google Scholar
+  - **98% content reduction**: 1808 KB raw emails → 38 KB structured content
+  - ~450,000 tokens saved per processing run
+- **Improved**: Hybrid approach for `processScholarEmails()` (Web App)
+  - Pre-extracts articles using cheerio before sending to AI
+  - Keeps stable single-API-call pattern (no batching complexity)
+  - Falls back to raw preprocessing if extraction fails
+  - AI receives clean structured format: `TITLE: ..., SOURCE: ..., AUTHORS: ..., ABSTRACT: ...`
+- **Improved**: Nature email processing
+  - Filters to only "Research" sections: News & Views, Reviews, Articles
+  - Skips editorials, news, opinions, and other non-research content
+  - 73% size reduction for Nature emails (217 KB → 58 KB research content)
+  - **NEW**: Extracts specific journal name from subject (e.g., "Nature Medicine", "Nature Aging")
+- **Improved**: Cell Press title extraction
+  - Extracts exact titles from `<a>` link text (not descriptions)
+  - Fixes title hallucination issue (e.g., "BRAIN-MAGNET" incorrect subtitle)
+- **Improved**: bioRxiv/medRxiv extraction
+  - Added plain-text DOI pattern extraction for highwire alert format
+  - Now extracts articles from both HTML links and plain-text emails
+- **Improved**: AHA Journals extraction
+  - Added support for `<span style="font-weight:bold">` inside `<a>` tag pattern
+  - Fixes extraction failure on large Hypertension emails (248 KB)
+- **Removed**: `reviewPaperLimit` config option
+  - All papers above `minScore` are now included in reviews (no truncation)
+  - Simplifies processing: one analysis file with all filtered papers
 
 ### 2026-01-23 (Update 2)
 - **Improved**: Scheduler robustness with automatic retries for failed chunks
@@ -693,10 +786,6 @@ The app exposes these internal API endpoints (available when running `npm run de
   - If today's paper list (`daily_papers_YYYY-MM-DD*.md`) already exists in `reports/`, skips Gmail sync and AI paper extraction
   - Still generates fresh `daily_review_*.md` using existing analysis files
   - Saves API calls when only regenerating the literature review
-- **Added**: `reviewPaperLimit` config option for truncating papers in review generation
-  - Default: 50 papers (top by relevance score)
-  - Set to 0 for no limit
-  - Prevents token overflow when processing large paper lists (e.g., 132 papers)
 - **Added**: Reference list appended to daily_review output
 - **Added**: Analysis file saved after review generation (for web app compatibility)
 - **Improved**: Uses `gemini-3-flash-preview` for lightweight review generation (more stable through proxy)

@@ -3,7 +3,8 @@
   "time": "08:00",
   "timezone": "Asia/Shanghai",
   "batchSize": 5,
+  "batchDelaySeconds": 10,
   "analysisLimit": 200,
   "minScore": 20,
-  "reviewPaperLimit": 50
+  "scoreBatchSize": 20
 }
