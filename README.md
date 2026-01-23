@@ -580,6 +580,23 @@ The app exposes these internal API endpoints (available when running `npm run de
 
 ## Changelog
 
+### 2026-01-23 (Update 2)
+- **Improved**: Scheduler robustness with automatic retries for failed chunks
+  - When a chunk fails during lightweight processing (e.g., due to network timeouts), it is now queued for retry
+  - Added a secondary retry pass that runs after the main processing loop
+  - Includes a 5-second backoff delay before retrying failed chunks
+  - Significantly improves success rate on unstable network connections
+
+### 2026-01-23
+- **Added**: Full support for English and Chinese language options
+  - Supported in both the Web UI and the batch processing script (via `--lang` flag)
+- **Fixed**: `ECONNRESET` error in OAuth2 token manager when running behind a proxy
+  - Added explicit `ProxyAgent` support to `OAuth2TokenManager` using `undici`
+  - Ensures token refreshes and code exchanges correctly utilize the configured proxy
+- **Fixed**: TypeScript compilation error in `geminiService.ts`
+  - Removed unsupported `fetch` property from `GoogleGenAI` configuration
+  - Improved reliability by relying on global `fetch` patching in `loadEnv.ts`
+
 ### 2026-01-17 (Update 2)
 - **Added**: Paper title validation and hallucination detection
   - New `scripts/validatePaperTitles.ts` validates extracted paper titles against original email content

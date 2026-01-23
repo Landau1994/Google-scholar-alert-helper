@@ -1369,9 +1369,9 @@ export const processScholarEmailsLightweight = async (
 
   const allPapers: Paper[] = [];
 
-  for (let i = 0; i < contentChunks.length; i++) {
-    const chunk = contentChunks[i];
-    logger.info(`[Lightweight] Processing chunk ${i + 1}/${contentChunks.length} (email source: ${chunk.source})...`);
+  // Helper function to process a single chunk
+  const processChunk = async (chunk: ChunkWithSource, index: number, isRetry: boolean = false) => {
+    logger.info(`[Lightweight] ${isRetry ? 'Retrying' : 'Processing'} chunk ${index + 1}/${contentChunks.length} (email source: ${chunk.source})...`);
 
     const prompt = `You are an academic paper relevance scorer. Extract academic papers from this content and score their relevance to research keywords.
 
@@ -1397,73 +1397,98 @@ For each paper, extract:
 Content to analyze:
 ${chunk.content}`;
 
-    try {
-      const response = await executeWithRetry(async () => {
-        return await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: simpleSchema
-          }
-        });
-      }, 'gemini-3-flash-preview', 3);
-
-      const result = JSON.parse(response.text || '{"papers":[]}');
-
-      if (result.papers && Array.isArray(result.papers)) {
-        // Convert simple format to full Paper format
-        for (const p of result.papers) {
-          if (p.title && p.title.length > 10) {
-            // Use AI-extracted source, but reject "Google Scholar" as it's not a real journal
-            // Also reject sources that are too short or invalid
-            let paperSource = p.source && p.source.length > 2 ? p.source : null;
-            if (paperSource && paperSource.toLowerCase().includes('google scholar')) {
-              paperSource = null; // Reject Google Scholar as source
-            }
-            // Fallback: use email source (Google Scholar gets 0.7 weight penalty)
-            if (!paperSource) {
-              paperSource = chunk.source;
-            }
-
-            // Calculate keyword bonus (deterministic boost based on keyword matches)
-            // Use chunk content as "snippet" since we don't extract snippets separately
-            const snippetFromChunk = chunk.content.substring(0, 1000); // Use first 1000 chars as context
-            const { bonus, matchedKeywords, matchedPenalties } = calculateKeywordBonus(p.title, snippetFromChunk, keywords, penaltyKeywords);
-
-            // Apply no-match penalty only for non-preprint sources
-            // Preprints (bioRxiv, medRxiv) already have heavy source weight penalty
-            const sourceLower = paperSource.toLowerCase();
-            const isPreprint = sourceLower.includes('biorxiv') || sourceLower.includes('medrxiv') || sourceLower.includes('arxiv');
-            const noMatchPenalty = (matchedKeywords.length === 0 && !isPreprint) ? -20 : 0;
-
-            // Final score = AI base score + keyword bonus + no-match penalty (capped at 100, min 0)
-            const baseScore = Math.round(p.relevanceScore || 0);
-            const finalScore = Math.max(0, Math.min(100, baseScore + bonus + noMatchPenalty));
-
-            const paper: Paper = {
-              id: `paper-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              title: p.title,
-              authors: p.authors ? p.authors.split(',').map((a: string) => a.trim()).slice(0, 3) : [],
-              snippet: '',
-              link: '',
-              source: paperSource,
-              date: new Date().toISOString().split('T')[0],
-              relevanceScore: finalScore,
-              matchedKeywords: matchedKeywords
-            };
-            allPapers.push(paper);
-          }
+    const response = await executeWithRetry(async () => {
+      return await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: simpleSchema
         }
-        logger.info(`[Lightweight] Chunk ${i + 1}: extracted ${result.papers.length} papers`);
+      });
+    }, 'gemini-3-flash-preview', 3);
+
+    const result = JSON.parse(response.text || '{"papers":[]}');
+
+    if (result.papers && Array.isArray(result.papers)) {
+      // Convert simple format to full Paper format
+      let chunkPapersCount = 0;
+      for (const p of result.papers) {
+        if (p.title && p.title.length > 10) {
+          // Use AI-extracted source, but reject "Google Scholar" as it's not a real journal
+          // Also reject sources that are too short or invalid
+          let paperSource = p.source && p.source.length > 2 ? p.source : null;
+          if (paperSource && paperSource.toLowerCase().includes('google scholar')) {
+            paperSource = null; // Reject Google Scholar as source
+          }
+          // Fallback: use email source (Google Scholar gets 0.7 weight penalty)
+          if (!paperSource) {
+            paperSource = chunk.source;
+          }
+
+          // Calculate keyword bonus (deterministic boost based on keyword matches)
+          // Use chunk content as "snippet" since we don't extract snippets separately
+          const snippetFromChunk = chunk.content.substring(0, 1000); // Use first 1000 chars as context
+          const { bonus, matchedKeywords, matchedPenalties } = calculateKeywordBonus(p.title, snippetFromChunk, keywords, penaltyKeywords);
+
+          // Apply no-match penalty only for non-preprint sources
+          // Preprints (bioRxiv, medRxiv) already have heavy source weight penalty
+          const sourceLower = paperSource.toLowerCase();
+          const isPreprint = sourceLower.includes('biorxiv') || sourceLower.includes('medrxiv') || sourceLower.includes('arxiv');
+          const noMatchPenalty = (matchedKeywords.length === 0 && !isPreprint) ? -20 : 0;
+
+          // Final score = AI base score + keyword bonus + no-match penalty (capped at 100, min 0)
+          const baseScore = Math.round(p.relevanceScore || 0);
+          const finalScore = Math.max(0, Math.min(100, baseScore + bonus + noMatchPenalty));
+
+          const paper: Paper = {
+            id: `paper-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            title: p.title,
+            authors: p.authors ? p.authors.split(',').map((a: string) => a.trim()).slice(0, 3) : [],
+            snippet: '',
+            link: '',
+            source: paperSource,
+            date: new Date().toISOString().split('T')[0],
+            relevanceScore: finalScore,
+            matchedKeywords: matchedKeywords
+          };
+          allPapers.push(paper);
+          chunkPapersCount++;
+        }
       }
+      logger.info(`[Lightweight] Chunk ${index + 1}: extracted ${chunkPapersCount} papers`);
+    }
+  };
+
+  const failedChunks: { index: number; chunk: ChunkWithSource }[] = [];
+
+  // Initial pass
+  for (let i = 0; i < contentChunks.length; i++) {
+    try {
+      await processChunk(contentChunks[i], i);
     } catch (chunkError: any) {
       logger.error(`[Lightweight] Chunk ${i + 1} failed:`, chunkError.message);
-      // Continue with next chunk
+      failedChunks.push({ index: i, chunk: contentChunks[i] });
     }
 
     // Delay between chunks to avoid rate limiting
     if (i < contentChunks.length - 1) {
+      await delay(2000);
+    }
+  }
+
+  // Retry pass for failed chunks
+  if (failedChunks.length > 0) {
+    logger.warn(`[Lightweight] ${failedChunks.length} chunks failed. Waiting 5s before retrying...`);
+    await delay(5000);
+
+    for (const { index, chunk } of failedChunks) {
+      try {
+        await processChunk(chunk, index, true);
+      } catch (retryError: any) {
+        logger.error(`[Lightweight] Retry for chunk ${index + 1} failed permanently:`, retryError.message);
+      }
+      // Delay between retries
       await delay(2000);
     }
   }
