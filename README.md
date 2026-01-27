@@ -622,6 +622,18 @@ The app exposes these internal API endpoints (available when running `npm run de
 
 ## Changelog
 
+### 2026-01-27
+- **Added**: New journal weight configurations
+  - **Communications Biology**: 1.0x (Nature Portfolio)
+  - **Advanced Science**: 1.0x (Wiley)
+  - **Cell Reports Methods**: 1.2x (Cell Press subsidiary)
+- **Fixed**: Journal detection from email subject lines
+  - "Communications Biology" is now explicitly recognized as a Nature Portfolio journal
+  - "Cell Reports Methods" is now explicitly recognized as a Cell Press journal
+  - Improved matching priority: specific journal names (e.g., "Cell Reports Methods") are now checked before shorter parent names (e.g., "Cell Reports") to prevent misidentification
+- **Improved**: Source multiplier logic
+  - Updated fuzzy matching in `geminiService.ts` to support the new journals and ensure consistent scoring multipliers
+
 ### 2026-01-24
 - **Fixed**: AI hallucination filtering in scoring pipeline
   - Papers returned by AI that don't match any original extracted article are now filtered out

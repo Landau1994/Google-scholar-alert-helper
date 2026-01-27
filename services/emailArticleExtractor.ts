@@ -40,6 +40,9 @@ function extractCellPressArticles(html: string, emailSubject: string = ''): Extr
 
   // Detect specific Cell Press journal from subject
   const cellJournals = [
+    'Cell Reports Medicine',
+    'Cell Reports Physical Science',
+    'Cell Reports Methods',
     'Cell Stem Cell',
     'Cell Reports',
     'Cell Metabolism',
@@ -50,8 +53,6 @@ function extractCellPressArticles(html: string, emailSubject: string = ''): Extr
     'Molecular Cell',
     'Cancer Cell',
     'Cell Genomics',
-    'Cell Reports Medicine',
-    'Cell Reports Physical Science',
     'Immunity',
     'Neuron',
     'Structure',
@@ -181,6 +182,7 @@ function extractCellPressArticles(html: string, emailSubject: string = ''): Extr
           'cell-genomics': 'Cell Genomics',
           'cell-reports-medicine': 'Cell Reports Medicine',
           'cell-reports-physical-science': 'Cell Reports Physical Science',
+          'cell-reports-methods': 'Cell Reports Methods',
           'immunity': 'Immunity',
           'neuron': 'Neuron',
           'structure': 'Structure',
@@ -829,7 +831,8 @@ export function extractArticlesFromEmail(
       'Nature Chemical Biology', 'Nature Structural & Molecular Biology',
       'Nature Reviews', 'Nature Climate Change', 'Nature Energy',
       'Nature Materials', 'Nature Nanotechnology', 'Nature Physics',
-      'Nature Photonics', 'Nature Plants', 'Nature Protocols'
+      'Nature Photonics', 'Nature Plants', 'Nature Protocols',
+      'Communications Biology'
     ];
 
     for (const journal of natureJournals) {

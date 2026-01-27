@@ -82,6 +82,10 @@ const SOURCE_WEIGHT_MULTIPLIERS: Record<string, number> = {
   'Nature Communications': 1.3,
   'Nature Medicine': 1.3,
   'Nature Genetics': 1.3,
+  'Communications Biology': 1.0,
+
+  // Advanced Science
+  'Advanced Science': 1.0,
 
   // Cell Press flagship journals (sister journals to Cell)
   'Immunity': 1.3,
@@ -94,6 +98,7 @@ const SOURCE_WEIGHT_MULTIPLIERS: Record<string, number> = {
   'Cell Press': 1.2,
   'Cell Systems': 1.2,
   'Cell Reports': 1.2,
+  'Cell Reports Methods': 1.2,
   'Cell Stem Cell': 1.2,
   'Cell Metabolism': 1.2,
   'Cell Genomics': 1.2,
@@ -167,6 +172,9 @@ export const getSourceMultiplier = (source: string): number => {
   // Nature subsidiary journals (1.3x)
   if (lowerSource.startsWith('nature ') || lowerSource.includes('nature communications') ||
       lowerSource.includes('nature medicine') || lowerSource.includes('nature genetics')) return 1.3;
+  
+  if (lowerSource.includes('communications biology')) return 1.0;
+  if (lowerSource.includes('advanced science')) return 1.0;
 
   // Cell Press flagship journals (1.3x)
   if (lowerSource.includes('immunity')) return 1.3;
