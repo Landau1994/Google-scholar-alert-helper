@@ -7,10 +7,17 @@ interface KeywordManagerProps {
   keywords: Keyword[];
   onAdd: (text: string) => void;
   onRemove: (id: string) => void;
+  penaltyKeywords: Keyword[];
+  onAddPenalty: (text: string) => void;
+  onRemovePenalty: (id: string) => void;
 }
 
-const KeywordManager: React.FC<KeywordManagerProps> = ({ keywords, onAdd, onRemove }) => {
+const KeywordManager: React.FC<KeywordManagerProps> = ({ 
+  keywords, onAdd, onRemove,
+  penaltyKeywords, onAddPenalty, onRemovePenalty
+}) => {
   const [newKeyword, setNewKeyword] = useState('');
+  const [newPenalty, setNewPenalty] = useState('');
 
   const handleAdd = () => {
     if (newKeyword.trim()) {
@@ -19,12 +26,23 @@ const KeywordManager: React.FC<KeywordManagerProps> = ({ keywords, onAdd, onRemo
     }
   };
 
+  const handleAddPenalty = () => {
+    if (newPenalty.trim()) {
+      onAddPenalty(newPenalty.trim());
+      setNewPenalty('');
+    }
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleAdd();
   };
 
+  const handlePenaltyKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleAddPenalty();
+  };
+
   return (
-    <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
+    <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
         <h2 className="text-2xl font-bold text-slate-800 mb-2">Research Interests</h2>
         <p className="text-slate-500 text-sm mb-8">
@@ -64,6 +82,55 @@ const KeywordManager: React.FC<KeywordManagerProps> = ({ keywords, onAdd, onRemo
                 {kw.text}
                 <button 
                   onClick={() => onRemove(kw.id)}
+                  className="p-1 hover:bg-black/5 rounded-full transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Penalty Words</h2>
+        <p className="text-slate-500 text-sm mb-8">
+          Define words that reduce an article's relevance. Useful for filtering out common but unrelated topics.
+        </p>
+
+        <div className="flex gap-2 mb-8">
+          <div className="relative flex-1">
+            <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Add penalty word (e.g., 'clinical trial')..." 
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none transition-all"
+              value={newPenalty}
+              onChange={(e) => setNewPenalty(e.target.value)}
+              onKeyPress={handlePenaltyKeyPress}
+            />
+          </div>
+          <button 
+            onClick={handleAddPenalty}
+            disabled={!newPenalty.trim()}
+            className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Add
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Current Penalties ({penaltyKeywords.length})</h3>
+          <div className="flex flex-wrap gap-3">
+            {penaltyKeywords.map((kw) => (
+              <div 
+                key={kw.id} 
+                className={`${kw.color} px-4 py-2 rounded-xl flex items-center gap-2 font-semibold text-sm animate-in zoom-in duration-300 shadow-sm`}
+              >
+                {kw.text}
+                <button 
+                  onClick={() => onRemovePenalty(kw.id)}
                   className="p-1 hover:bg-black/5 rounded-full transition-colors"
                 >
                   <X className="w-3 h-3" />

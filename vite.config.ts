@@ -252,7 +252,7 @@ export default defineConfig({
               const keywordsPath = path.resolve(__dirname, 'keywords.json');
               if (!fs.existsSync(keywordsPath)) {
                 res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify([]));
+                res.end(JSON.stringify({ keywords: [], penaltyKeywords: [] }));
                 return;
               }
               const content = fs.readFileSync(keywordsPath, 'utf-8');

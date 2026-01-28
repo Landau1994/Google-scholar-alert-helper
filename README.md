@@ -622,6 +622,13 @@ The app exposes these internal API endpoints (available when running `npm run de
 
 ## Changelog
 
+### 2026-01-28
+- **Fixed**: Journal recognition for specific AHA journals
+  - "Circulation: Heart Failure" and "Circulation: Genomic and Precision Medicine" are now correctly identified by their full names instead of being lumped under generic "Circulation".
+- **Fixed**: Penalty keyword persistence in large-scale processing
+  - Fixed a bug where penalty keywords were lost when emails were split into multiple chunks for processing in `geminiService.ts`.
+- **Improved**: Expanded the default penalty keyword list in `keywords.json` to further reduce noise from non-relevant research areas including Plants & Agriculture, Oncology, and other model organisms.
+
 ### 2026-01-27
 - **Added**: New journal weight configurations
   - **Communications Biology**: 1.0x (Nature Portfolio)

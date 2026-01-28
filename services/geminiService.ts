@@ -1281,7 +1281,7 @@ export const processScholarEmails = async (
 
   if (estimatedTokens > MAX_INPUT_TOKENS) {
     logger.warn(`Content exceeds token limit (${estimatedTokens} > ${MAX_INPUT_TOKENS}), processing in chunks...`);
-    return processInChunks(rawEmails, keywords, maxPapers, linkMap, snippetMap);
+    return processInChunks(rawEmails, keywords, maxPapers, penaltyKeywords, linkMap, snippetMap);
   }
 
   // Helper function with retry logic
@@ -1327,7 +1327,7 @@ export const processScholarEmails = async (
       // If token limit error, try chunking
       if (parsed.type === 'token_limit') {
         logger.warn('Token limit hit, switching to chunked processing...');
-        return processInChunks(rawEmails, keywords, maxPapers, linkMap, snippetMap);
+        return processInChunks(rawEmails, keywords, maxPapers, penaltyKeywords, linkMap, snippetMap);
       }
 
       logger.warn(`Primary model failed, attempting fallback... ${parsed.message}`);
@@ -1344,7 +1344,7 @@ export const processScholarEmails = async (
         // If fallback also hits token limit, try chunking
         if (fallbackParsed.type === 'token_limit') {
           logger.warn('Fallback also hit token limit, switching to chunked processing...');
-          return processInChunks(rawEmails, keywords, maxPapers, linkMap, snippetMap);
+          return processInChunks(rawEmails, keywords, maxPapers, penaltyKeywords, linkMap, snippetMap);
         }
 
         throw new Error(fallbackParsed.message);
@@ -1367,8 +1367,9 @@ const processInChunks = async (
   rawEmails: string,
   keywords: string[],
   maxPapers: number,
-  globalLinkMap: Map<string, string>,
-  globalSnippetMap: Map<string, string>
+  penaltyKeywords: string[] = [],
+  globalLinkMap: Map<string, string> = new Map(),
+  globalSnippetMap: Map<string, string> = new Map()
 ): Promise<{ papers: Paper[], summary: DigestSummary }> => {
   const chunks = splitIntoChunks(rawEmails);
   logger.info(`Split content into ${chunks.length} chunks for processing`);
@@ -1389,7 +1390,7 @@ const processInChunks = async (
       // (Simple division, but could be weighted by chunk size in future)
       const chunkMaxPapers = Math.ceil(maxPapers / chunks.length);
       
-      const result = await processScholarEmails(chunk, keywords, chunkMaxPapers);
+      const result = await processScholarEmails(chunk, keywords, chunkMaxPapers, penaltyKeywords);
       return result;
     } catch (chunkError: any) {
       logger.error(`Failed to process chunk ${index + 1}:`, chunkError);

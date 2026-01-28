@@ -632,6 +632,8 @@ function extractAHAArticles(html: string, emailSubject: string = ''): ExtractedA
   const detectAHAJournal = (context: string): string => {
     const text = (emailSubject + ' ' + context).toLowerCase();
     if (text.includes('circulation research')) return 'Circulation Research';
+    if (text.includes('circulation: heart failure') || text.includes('circ heart fail')) return 'Circulation: Heart Failure';
+    if (text.includes('circulation: genomic') || text.includes('circ genom')) return 'Circulation: Genomic and Precision Medicine';
     if (text.includes('circulation')) return 'Circulation';
     if (text.includes('hypertension')) return 'Hypertension';
     if (text.includes('stroke')) return 'Stroke';

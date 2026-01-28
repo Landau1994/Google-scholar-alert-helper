@@ -94,43 +94,111 @@ const AppContent: React.FC = () => {
     } catch { return INITIAL_KEYWORDS; }
   });
 
+  const [penaltyKeywords, setPenaltyKeywords] = useState<Keyword[]>(() => {
+    try {
+      const saved = localStorage.getItem('scholar_pulse_penalty_keywords');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  // Ref to track last synced keywords content to avoid infinite save-load loops
+  const lastSyncedKeywordsRef = useRef<string>('');
+  const isFirstRender = useRef(true);
+  const [hasLoadedFromServer, setHasLoadedFromServer] = useState(false);
+
   useEffect(() => {
     try { localStorage.setItem('scholar_pulse_keywords', JSON.stringify(keywords)); } catch (e) { console.warn('Failed to save keywords', e); }
+    try { localStorage.setItem('scholar_pulse_penalty_keywords', JSON.stringify(penaltyKeywords)); } catch (e) { console.warn('Failed to save penalty keywords', e); }
 
-    // Sync keywords to file for scheduler (preserve penaltyKeywords)
+    // Skip syncing on the very first render and until we've at least tried to load from server
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    if (!hasLoadedFromServer) {
+      return;
+    }
+
+    // Sync keywords to file for scheduler
     (async () => {
       try {
         const keywordTexts = keywords.map(k => k.text);
+        const penaltyKeywordTexts = penaltyKeywords.map(k => k.text);
+        
+        const currentContent = JSON.stringify({
+          keywords: keywordTexts,
+          penaltyKeywords: penaltyKeywordTexts
+        });
 
-        // First, load existing keywords.json to preserve penaltyKeywords
-        let existingData: any = { keywords: [], penaltyKeywords: [] };
-        try {
-          const res = await fetch('/api/keywords');
-          if (res.ok) {
-            const data = await res.json();
-            // If it's the new object format, preserve penaltyKeywords
-            if (data && !Array.isArray(data) && data.penaltyKeywords) {
-              existingData = data;
-            }
-          }
-        } catch (e) {
-          // Ignore fetch errors, use default
+        // Skip if content hasn't changed (prevents loop with mount-load)
+        if (currentContent === lastSyncedKeywordsRef.current) {
+          return;
         }
 
-        // Save with preserved penaltyKeywords
+        // Save both keywords and penaltyKeywords
         await fetch('/api/keywords', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            keywords: keywordTexts,
-            penaltyKeywords: existingData.penaltyKeywords || []
-          })
+          body: currentContent
         });
+        
+        lastSyncedKeywordsRef.current = currentContent;
       } catch (e) {
         console.warn('Failed to sync keywords to file', e);
       }
     })();
-  }, [keywords]);
+  }, [keywords, penaltyKeywords, hasLoadedFromServer]);
+
+  // Load keywords and penaltyKeywords from server on initial load
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/keywords');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && !Array.isArray(data)) {
+            if (data.keywords && Array.isArray(data.keywords)) {
+              // Only update if local is empty or to sync from server
+              // For now, let's just use server as source of truth if it exists
+              const colors = ['bg-blue-100 text-blue-700', 'bg-purple-100 text-purple-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-indigo-100 text-indigo-700', 'bg-cyan-100 text-cyan-700'];
+              
+              const serverKeywords = data.keywords || [];
+              const serverPenaltyKeywords = data.penaltyKeywords || [];
+
+              // Update ref immediately so the save useEffect (triggered by sets below) skips
+              lastSyncedKeywordsRef.current = JSON.stringify({
+                keywords: serverKeywords,
+                penaltyKeywords: serverPenaltyKeywords
+              });
+
+              if (serverKeywords.length > 0) {
+                const mappedKeywords: Keyword[] = serverKeywords.map((text: string, i: number) => ({
+                  id: `kw-${Date.now()}-${i}`,
+                  text,
+                  color: colors[i % colors.length]
+                }));
+                setKeywords(mappedKeywords);
+              }
+
+              if (serverPenaltyKeywords.length > 0) {
+                const mappedPenalty: Keyword[] = serverPenaltyKeywords.map((text: string, i: number) => ({
+                  id: `pkw-${Date.now()}-${i}`,
+                  text,
+                  color: 'bg-slate-100 text-slate-700'
+                }));
+                setPenaltyKeywords(mappedPenalty);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load keywords from server', e);
+      } finally {
+        setHasLoadedFromServer(true);
+      }
+    })();
+  }, []);
 
   // Persist Papers
   const [papers, setPapers] = useState<Paper[]>(() => {
@@ -468,8 +536,9 @@ const AppContent: React.FC = () => {
   const analyzeSingleEmail = async (email: RawEmail): Promise<Paper[]> => {
     try {
       const keywordTexts = keywords.map(k => k.text);
+      const penaltyKeywordTexts = penaltyKeywords.map(k => k.text);
       // Analyze specific email content
-      const result = await processScholarEmails(email.body, keywordTexts, settings.analysisLimit);
+      const result = await processScholarEmails(email.body, keywordTexts, settings.analysisLimit, penaltyKeywordTexts);
       return result.papers;
     } catch (error) {
       console.error("Single email analysis error:", error);
@@ -495,6 +564,7 @@ const AppContent: React.FC = () => {
     
     try {
       const keywordTexts = keywords.map(k => k.text);
+      const penaltyKeywordTexts = penaltyKeywords.map(k => k.text);
       
       for (let i = 0; i < totalBatches; i++) {
         const start = i * BATCH_SIZE;
@@ -513,7 +583,7 @@ const AppContent: React.FC = () => {
         const rawContent = batch.map(e => `--- EMAIL ID: ${e.id} ---\nFrom: ${e.from || 'Unknown'}\nSubject: ${e.subject}\n${e.body}\n\n`).join('');
         
         try {
-          const result = await processScholarEmails(rawContent, keywordTexts, settings.analysisLimit);
+          const result = await processScholarEmails(rawContent, keywordTexts, settings.analysisLimit, penaltyKeywordTexts);
           
           // Accumulate papers
           allPapers = [...allPapers, ...result.papers];
@@ -593,7 +663,8 @@ const AppContent: React.FC = () => {
     setIsLoading(true);
     try {
       const keywordTexts = keywords.map(k => k.text);
-      const result = await processScholarEmails(rawContent, keywordTexts, settings.analysisLimit);
+      const penaltyKeywordTexts = penaltyKeywords.map(k => k.text);
+      const result = await processScholarEmails(rawContent, keywordTexts, settings.analysisLimit, penaltyKeywordTexts);
       
       // Deduplicate, filter low relevance and sort by relevance score descending
       const dedupedPapers = deduplicatePapers(result.papers);
@@ -626,12 +697,33 @@ const AppContent: React.FC = () => {
   };
 
   const addKeyword = (text: string) => {
-    const colors = ['bg-blue-100 text-blue-700', 'bg-purple-100 text-purple-700', 'bg-green-100 text-green-700', 'bg-orange-100 text-orange-700', 'bg-pink-100 text-pink-700'];
-    const newKeyword: Keyword = { id: Date.now().toString(), text, color: colors[Math.floor(Math.random() * colors.length)] };
+    if (keywords.some(k => k.text.toLowerCase() === text.toLowerCase())) return;
+    const colors = ['bg-blue-100 text-blue-700', 'bg-purple-100 text-purple-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-indigo-100 text-indigo-700', 'bg-cyan-100 text-cyan-700'];
+    const newKeyword: Keyword = {
+      id: `kw-${Date.now()}`,
+      text,
+      color: colors[keywords.length % colors.length]
+    };
     setKeywords([...keywords, newKeyword]);
   };
 
-  const removeKeyword = (id: string) => setKeywords(keywords.filter(k => k.id !== id));
+  const removeKeyword = (id: string) => {
+    setKeywords(keywords.filter(k => k.id !== id));
+  };
+
+  const addPenaltyKeyword = (text: string) => {
+    if (penaltyKeywords.some(k => k.text.toLowerCase() === text.toLowerCase())) return;
+    const newKeyword: Keyword = {
+      id: `pkw-${Date.now()}`,
+      text,
+      color: 'bg-slate-100 text-slate-700'
+    };
+    setPenaltyKeywords([...penaltyKeywords, newKeyword]);
+  };
+
+  const removePenaltyKeyword = (id: string) => {
+    setPenaltyKeywords(penaltyKeywords.filter(k => k.id !== id));
+  };
 
   const generateReportContent = (currentSummary: DigestSummary | null = summary) => {
     if (!currentSummary || papers.length === 0) return '';
@@ -852,7 +944,8 @@ const AppContent: React.FC = () => {
              setShowLogs(true);
              try {
                const keywordTexts = keywords.map(k => k.text);
-               const result = await processScholarEmails(content, keywordTexts);
+               const penaltyKeywordTexts = penaltyKeywords.map(k => k.text);
+               const result = await processScholarEmails(content, keywordTexts, settings.analysisLimit, penaltyKeywordTexts);
                setPapers(result.papers);
                setSummary(result.summary);
                setView('dashboard');
@@ -864,7 +957,16 @@ const AppContent: React.FC = () => {
                setIsLoading(false);
              }
           }} isProcessing={isLoading} onSyncGmail={syncFromGmail} isAuthorized={isAuthorized} />}
-          {view === 'keywords' && <KeywordManager keywords={keywords} onAdd={addKeyword} onRemove={removeKeyword} />}
+          {view === 'keywords' && (
+          <KeywordManager 
+            keywords={keywords} 
+            onAdd={addKeyword} 
+            onRemove={removeKeyword}
+            penaltyKeywords={penaltyKeywords}
+            onAddPenalty={addPenaltyKeyword}
+            onRemovePenalty={removePenaltyKeyword}
+          />
+        )}
           {view === 'preview' && (
             <Preview
               emails={fetchedEmails}
