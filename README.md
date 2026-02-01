@@ -307,6 +307,14 @@ Then restart the server: `pm2 restart scholarpulse`
 
 If you see "fetch failed" errors during OAuth authorization, it usually means the proxy is not configured or not running.
 
+**Troubleshooting: Token Expires Every 7 Days**
+
+If your refresh token stops working after exactly 7 days:
+1. This happens because your Google Cloud Project is in **"Testing"** status.
+2. **Solution**: Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials/consent) > **OAuth consent screen**.
+3. Click the **"Publish App"** (or "Push to production") button.
+4. You may see a warning about verification ("App not verified"). For personal use, you can safely ignore this. The 7-day limit will be removed.
+
 ### View Scheduled Reports
 
 1. Open the web app
@@ -621,6 +629,12 @@ The app exposes these internal API endpoints (available when running `npm run de
 | `/oauth2callback` | GET | Handle OAuth2 callback |
 
 ## Changelog
+
+### 2026-02-01
+- **Changed**: Reverted from Tailscale-based external access to a local network `nip.io` scheme.
+- **Improved**: Configured Vite and OAuth2 redirect URIs to use the local network IP (`192.168.10.9.nip.io`) for easier access within the same LAN without complex tunneling.
+- **Fixed**: Removed Tailscale "serve" proxy to ensure the application runs exclusively on the local network/localhost.
+- **Improved**: Integrated `penaltyKeywords` into the web app's analysis pipeline. Updated `App.tsx` to pass keywords from `KeywordManager` to all email processing functions (`analyzeSingleEmail`, `processSelectedEmails`, and `handleImport`), ensuring consistency between the web UI and the batch scheduler.
 
 ### 2026-01-28
 - **Fixed**: Journal recognition for specific AHA journals

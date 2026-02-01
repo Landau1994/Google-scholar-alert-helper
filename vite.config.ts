@@ -44,7 +44,7 @@ const proxyFetch = (url: string, options: any = {}) => {
 export default defineConfig({
   server: {
     port: 3000,
-    strictPort: true,
+    strictPort: false,
     host: true, // This makes the server accessible externally
     allowedHosts: true, // Allow magic domains like nip.io
   },
