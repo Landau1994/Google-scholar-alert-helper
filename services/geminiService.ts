@@ -51,6 +51,8 @@ const SOURCE_MAP: Record<string, string> = {
   'ealert@nature.com': 'Nature',
   'alerts@nature.com': 'Nature',
   'ahajournals@ealerts.heart.org': 'AHA Journals',
+  'etoc@oup.com': 'European Heart Journal',
+  'blood@hematology.org': 'Blood',
 };
 
 /**
@@ -59,7 +61,7 @@ const SOURCE_MAP: Record<string, string> = {
  * lower multipliers for preprints and general search results.
  *
  * Tier structure:
- * - 1.5x: Flagship journals (Nature, Cell, Science)
+ * - 1.5x: Flagship journals (Nature, Cell, Science, EHJ, Blood)
  * - 1.3x: Top-tier journals and Nature/Science subsidiary journals
  * - 1.2x: High-quality specialty journals, Cell Press subsidiary journals, AHA journals
  * - 1.1x: Major publishers
@@ -69,32 +71,30 @@ const SOURCE_MAP: Record<string, string> = {
  * - 0.2x: Unknown sources
  */
 const SOURCE_WEIGHT_MULTIPLIERS: Record<string, number> = {
-  // Flagship journals
+  // Flagship/Top-tier journals
   'Nature': 1.5,
   'Cell': 1.5,
   'Science': 1.5,
+  'The Lancet': 1.5,
+  'NEJM': 1.5,
 
-  // Top-tier journals
-  'The Lancet': 1.3,
-  'NEJM': 1.3,
-
-  // Nature subsidiary journals
+  // High-impact clinical & subsidiary journals
   'Nature Communications': 1.3,
   'Nature Medicine': 1.3,
   'Nature Genetics': 1.3,
-  'Communications Biology': 1.0,
-
-  // Advanced Science
-  'Advanced Science': 1.0,
-
-  // Cell Press flagship journals (sister journals to Cell)
   'Immunity': 1.3,
   'Neuron': 1.3,
   'Developmental Cell': 1.3,
   'Molecular Cell': 1.3,
   'Cancer Cell': 1.3,
+  'Circulation': 1.3,
+  'Circulation Research': 1.3,
+  'European Heart Journal': 1.3,
+  'Blood': 1.3,
 
-  // Cell Press subsidiary journals
+  // Other journals and publishers
+  'Communications Biology': 1.0,
+  'Advanced Science': 1.0,
   'Cell Press': 1.2,
   'Cell Systems': 1.2,
   'Cell Reports': 1.2,
@@ -108,42 +108,30 @@ const SOURCE_WEIGHT_MULTIPLIERS: Record<string, number> = {
   'iScience': 1.2,
   'STAR Protocols': 1.2,
 
-  // High-quality specialty journals
   'PNAS': 1.2,
   'JAMA': 1.2,
 
-  // AHA flagship journals (higher tier)
-  'Circulation': 1.3,
-  'Circulation Research': 1.3,
-
-  // AHA subsidiary journals (lower tier)
   'Hypertension': 1.2,
   'Stroke': 1.2,
   'Arteriosclerosis, Thrombosis, and Vascular Biology': 1.2,
   'AHA Journals': 1.2,
 
-  // Major publishers
-  'Elsevier': 1.1,
-  'Springer': 1.1,
+  'Elsevier': 1.0,
+  'Springer': 1.0,
 
-  // Mega-journals
   'Scientific Reports': 0.75,
 
-  // Preprints
   'bioRxiv': 0.6,
   'medRxiv': 0.6,
   'bioRxiv/medRxiv': 0.6,
 
-  // Low-impact open access
   'Frontiers': 0.5,
   'MDPI': 0.5,
   'Hindawi': 0.45,
   'iCell': 0.4,
 
-  // Mixed quality search
   'Google Scholar': 0.7,
 
-  // Unknown
   'Unknown Source': 0.2,
 };
 

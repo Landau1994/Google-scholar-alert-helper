@@ -176,10 +176,11 @@ export class OAuth2TokenManager {
 
     if (!response.ok) {
       const error = await response.text();
-      // If refresh fails, tokens might be revoked
+      // Log the error but don't clear tokens automatically - it might be a temporary network issue
+      // User can manually re-authorize if needed via the web UI
       if (response.status === 400 || response.status === 401) {
-        console.error('[OAuth2] Refresh token invalid or revoked');
-        this.clearTokens();
+        console.error('[OAuth2] Refresh token may be invalid or revoked. Please check your authorization.');
+        console.error('[OAuth2] If this persists, re-authorize via Settings -> Server-Side Auth');
       }
       throw new Error(`Token refresh failed: ${error}`);
     }

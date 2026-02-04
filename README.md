@@ -395,12 +395,11 @@ Relevance scores are automatically adjusted based on the paper source to priorit
 
 | Source | Weight | Effect |
 |--------|--------|--------|
-| Nature, Cell, Science | 1.5x | +50% score boost |
-| Nature Communications, Lancet, NEJM | 1.3x | +30% score boost |
-| Circulation, Circulation Research | 1.3x | +30% score boost |
+| Nature, Cell, Science, Lancet, NEJM | 1.5x | +50% score boost |
+| Circulation, EHJ, Blood, Nature/Cell subsidiary journals | 1.3x | +30% score boost |
 | Cell Press (Cell Reports, iScience, STAR Protocols) | 1.2x | +20% score boost |
 | PNAS, JAMA, AHA subsidiary (Hypertension, Stroke) | 1.2x | +20% score boost |
-| Elsevier, Springer | 1.1x | +10% score boost |
+| Elsevier, Springer, Advanced Science | 1.0x | No score change |
 | Conference/Proceedings | 0.8x | -20% score reduction |
 | Scientific Reports | 0.75x | -25% score reduction |
 | Google Scholar | 0.7x | -30% score reduction |
@@ -629,6 +628,14 @@ The app exposes these internal API endpoints (available when running `npm run de
 | `/oauth2callback` | GET | Handle OAuth2 callback |
 
 ## Changelog
+
+### 2026-02-04
+- **Updated**: Journal relevance scoring weights to better reflect prestige and impact
+  - **Tier 1 (1.5x)**: Nature, Cell, Science, The Lancet, NEJM
+  - **Tier 2 (1.3x)**: Circulation, European Heart Journal, Blood, Nature/Cell subsidiary journals
+  - **Tier 3 (1.2x)**: High-quality specialty journals (PNAS, JAMA, AHA subsidiaries, Cell Press subsidiaries)
+  - **Baseline (1.0x)**: Elsevier, Springer, Advanced Science (no score change)
+- **Updated**: `SOURCE_MAP` to include explicit mapping for European Heart Journal (`etoc@oup.com`) and Blood (`blood@hematology.org`).
 
 ### 2026-02-01
 - **Changed**: Reverted from Tailscale-based external access to a local network `nip.io` scheme.
