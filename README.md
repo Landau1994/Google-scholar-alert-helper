@@ -629,6 +629,9 @@ The app exposes these internal API endpoints (available when running `npm run de
 
 ## Changelog
 
+### 2026-02-25
+- **Added**: Dynamic favicon using `picsum.photos` in `index.html` to provide a visual icon for the browser tab.
+
 ### 2026-02-04
 - **Updated**: Journal relevance scoring weights to better reflect prestige and impact
   - **Tier 1 (1.5x)**: Nature, Cell, Science, The Lancet, NEJM
