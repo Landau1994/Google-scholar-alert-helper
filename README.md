@@ -120,7 +120,7 @@ You can configure the scheduler via the web UI or by editing `scheduler.config.j
 
 ### Paper Title Validation & Hallucination Detection
 
-The scheduler includes automatic validation to detect AI hallucinations (papers that don't exist in the original emails):
+The scheduler includes automatic validation to detect AI hallucinations (papers that don't exist in the original emails). **This validation is enabled by default** and runs automatically immediately after paper extraction to act as a quality gate:
 
 **How it works:**
 1. After paper extraction, each paper title is validated against the original email content
@@ -225,7 +225,7 @@ This saves API calls and processing time when you only need to regenerate the li
 │ - Use all papers above minScore (already sorted by relevance)   │
 │ - Generate review with AI                                       │
 │ - Append reference list                                         │
-│ - Save analysis-{timestamp}.json (review papers)                │
+│ - Update/Save analysis-{timestamp}.json (review papers)         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -628,6 +628,12 @@ The app exposes these internal API endpoints (available when running `npm run de
 | `/oauth2callback` | GET | Handle OAuth2 callback |
 
 ## Changelog
+
+### 2026-03-17
+- **Improved**: Scheduler analysis file management
+  - The scheduler now updates/overwrites the primary daily `analysis-*.json` file when regenerating reports on the same day, preventing file duplication and directory clutter.
+- **Documented**: Validation workflow
+  - Clarified that paper title validation and hallucination removal is enabled by default and acts as an automatic quality gate during the daily extraction process.
 
 ### 2026-02-25
 - **Added**: Dynamic favicon using `picsum.photos` in `index.html` to provide a visual icon for the browser tab.

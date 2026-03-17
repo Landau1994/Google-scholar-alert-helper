@@ -739,9 +739,6 @@ async function generateDailyReport(): Promise<void> {
 
               // Use refined file for subsequent steps
               extractionFilename = path.basename(refinedResult.refinedAnalysisFile);
-
-              // Mark that we already have a complete refined file with literature review
-              (globalThis as any).__refinedComplete = true;
             }
           } catch (validationError) {
             console.warn(`[Scheduler] Validation skipped:`, validationError);
@@ -946,26 +943,33 @@ async function generateDailyReport(): Promise<void> {
     categorizedPapers.push({ keyword, paperIds });
   }
 
-  // Skip creating another analysis file if refined version was already created
-  if (!(globalThis as any).__refinedComplete) {
-    const analysisForReview = {
-      papers: reviewPapers,
-      summary: {
-        overview: `Daily literature review generated from ${reviewPapers.length} papers (out of ${papers.length} total) on ${new Date().toLocaleDateString()}. Top keywords: ${topKeywords.slice(0, 5).join(', ')}.`,
-        keyTrends: topKeywords.slice(0, 5).map(kw => `Research on ${kw}`),
-        topRecommendations: reviewPapers.slice(0, 5).map(p => p.title),
-        categorizedPapers: categorizedPapers,
-        academicReport: generatedReview
+  // UPDATE the primary analysis file with the generated review instead of creating a new one
+  if (filesToProcess && filesToProcess.length > 0) {
+    const primaryFile = filesToProcess[0]; // The most recent one or the one we just created
+    const primaryPath = path.join(syncedEmailsDir, primaryFile);
+    
+    if (fs.existsSync(primaryPath)) {
+      try {
+        const fileData = JSON.parse(fs.readFileSync(primaryPath, 'utf-8'));
+        if (!fileData.summary) {
+          fileData.summary = {};
+        }
+        
+        fileData.summary.overview = `Daily literature review generated from ${reviewPapers.length} papers (out of ${papers.length} total) on ${new Date().toLocaleDateString()}. Top keywords: ${topKeywords.slice(0, 5).join(', ')}.`;
+        fileData.summary.keyTrends = topKeywords.slice(0, 5).map(kw => `Research on ${kw}`);
+        fileData.summary.topRecommendations = reviewPapers.slice(0, 5).map(p => p.title);
+        fileData.summary.categorizedPapers = categorizedPapers;
+        fileData.summary.academicReport = generatedReview;
+        
+        // Ensure the saved papers exactly match those used in the review (filtered by minScore)
+        fileData.papers = reviewPapers;
+        
+        fs.writeFileSync(primaryPath, JSON.stringify(fileData, null, 2));
+        console.log(`[Scheduler] Updated primary analysis file with review: ${primaryFile}`);
+      } catch (e) {
+        console.error(`[Scheduler] Failed to update analysis file with review:`, e);
       }
-    };
-    const analysisReviewFilename = `analysis-${Date.now()}.json`;
-    fs.writeFileSync(
-      path.join(syncedEmailsDir, analysisReviewFilename),
-      JSON.stringify(analysisForReview, null, 2)
-    );
-    console.log(`[Scheduler] Saved review analysis to ${analysisReviewFilename}`);
-  } else {
-    console.log(`[Scheduler] Skipping duplicate analysis file (refined version already created)`);
+    }
   }
 
   console.log(`[Scheduler] Daily report generation completed at ${new Date().toLocaleString()}`);
