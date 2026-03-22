@@ -235,7 +235,14 @@ export default defineConfig({
               try {
                 const config = JSON.parse(body);
                 const configPath = path.resolve(__dirname, 'scheduler.config.json');
-                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+                let mergedConfig = config;
+                if (fs.existsSync(configPath)) {
+                  try {
+                    const existingConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+                    mergedConfig = { ...existingConfig, ...config };
+                  } catch (e) {}
+                }
+                fs.writeFileSync(configPath, JSON.stringify(mergedConfig, null, 2));
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ status: 'success' }));
               } catch (error) {

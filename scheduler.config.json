@@ -2,9 +2,9 @@
   "enabled": true,
   "time": "08:00",
   "timezone": "Asia/Shanghai",
-  "batchSize": 20,
+  "batchSize": 5,
   "batchDelaySeconds": 10,
   "analysisLimit": 200,
-  "minScore": 10,
-  "scoreBatchSize": 50
+  "minScore": 20,
+  "scoreBatchSize": 20
 }

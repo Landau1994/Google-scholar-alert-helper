@@ -629,6 +629,11 @@ The app exposes these internal API endpoints (available when running `npm run de
 
 ## Changelog
 
+### 2026-03-22
+- **Fixed**: Configuration overwriting in Web UI
+  - Fixed a bug where saving scheduler settings (time, timezone, or enabled status) from the Settings page would overwrite the entire `scheduler.config.json` file, causing other processing parameters like `minScore`, `batchSize`, and `analysisLimit` to be lost and revert to defaults.
+  - Improved the backend middleware in `vite.config.ts` to perform a deep merge of new settings with the existing configuration.
+
 ### 2026-03-17
 - **Improved**: Scheduler analysis file management
   - The scheduler now updates/overwrites the primary daily `analysis-*.json` file when regenerating reports on the same day, preventing file duplication and directory clutter.
