@@ -42,13 +42,40 @@ export class OAuth2TokenManager {
   }
 
   /**
-   * Helper to perform fetch with proxy support
+   * Helper to perform fetch with proxy support and retries
    */
-  private async fetchWithProxy(url: string, init: any): Promise<any> {
-      if (this.dispatcher) {
-          return undiciFetch(url, { ...init, dispatcher: this.dispatcher });
+  private async fetchWithProxy(url: string, init: any, retries = 3, backoff = 1000): Promise<any> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        let response;
+        if (this.dispatcher) {
+          response = await undiciFetch(url, { ...init, dispatcher: this.dispatcher });
+        } else {
+          // Fall back to global fetch which might be patched by loadEnv.ts
+          response = await fetch(url, init);
+        }
+
+        if (!response.ok && response.status >= 500) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response;
+      } catch (err: any) {
+        const isLastRetry = i === retries - 1;
+        const errorMessage = err.message || String(err);
+        const isNetworkError = errorMessage.includes('fetch failed') || 
+                              errorMessage.includes('UND_ERR_SOCKET') || 
+                              (err.cause && (err.cause.message?.includes('socket') || err.cause.code === 'UND_ERR_SOCKET'));
+
+        if (isLastRetry || !isNetworkError) {
+          throw err;
+        }
+
+        const delay = backoff * Math.pow(2, i);
+        console.warn(`[OAuth2] Fetch failed (${errorMessage}). Retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
-      return undiciFetch(url, init);
+    }
+    throw new Error('Retries failed');
   }
 
   /**

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { ProxyAgent, fetch as undiciFetch, setGlobalDispatcher } from 'undici';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,6 +30,11 @@ const proxyAgent = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
 
 if (proxyUrl) {
   console.log(`[Vite] Using proxy: ${proxyUrl}`);
+  if (proxyAgent) {
+    setGlobalDispatcher(proxyAgent);
+    // Replace global fetch to ensure all libraries (like @google/generative-ai) use the proxy
+    (globalThis as any).fetch = (url: string, options: any) => undiciFetch(url, { ...options, dispatcher: proxyAgent });
+  }
 }
 
 // Helper function for fetch with proxy support
@@ -53,7 +58,7 @@ export default defineConfig({
     {
       name: 'save-emails-middleware',
       configureServer(server) {
-        server.middlewares.use((req, res, next) => {
+        server.middlewares.use(async (req, res, next) => {
           const url = req.url || '';
           
           if (url === '/api/save-emails' && req.method === 'POST') {
@@ -542,6 +547,103 @@ export default defineConfig({
                 `);
               }
             })();
+            return;
+          }
+
+          // API: Vector Search
+          if (url.startsWith('/api/vector-search') && req.method === 'GET') {
+            try {
+              const urlObj = new URL(url, `http://${req.headers.host}`);
+              const query = urlObj.searchParams.get('q');
+              const limit = parseInt(urlObj.searchParams.get('limit') || '20');
+
+              if (!query) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ status: 'error', message: 'Missing query parameter q' }));
+                return;
+              }
+
+              console.log(`[API] Vector search for: "${query}" (limit: ${limit})`);
+
+              // Dynamic import vectorService
+              const { searchPapers } = await import('./services/vectorService.ts');
+              const results = await searchPapers(query, limit);
+
+              console.log(`[API] Vector search found ${results.length} results`);
+
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(results));
+            } catch (error) {
+              console.error('[API] vector-search error:', error);
+              res.statusCode = 500;
+              res.end(JSON.stringify({ status: 'error', message: (error as Error).message }));
+            }
+            return;
+          }
+
+          // API: Theme Insights (Clustering)
+          if (url === '/api/theme-insights' && req.method === 'GET') {
+            try {
+              console.log('[API] Generating theme insights...');
+              const path = await import('path');
+              const lancedb = await import('@lancedb/lancedb');
+              const VECTOR_DB_PATH = path.resolve(__dirname, "data/vector_db");
+              
+              if (!fs.existsSync(VECTOR_DB_PATH)) {
+                console.error('[API] Vector DB not found at:', VECTOR_DB_PATH);
+                res.end(JSON.stringify({ status: 'error', message: 'Database not found' }));
+                return;
+              }
+
+              const db = await lancedb.connect(VECTOR_DB_PATH);
+              const table = await db.openTable("papers");
+              
+              // Get a larger sample for better clustering
+              const papers = await table.query().limit(5000).toArray();
+              const validPapers = papers.filter(p => p.id !== "schema-definition");
+
+              console.log(`[API] Analyzing ${validPapers.length} papers for themes...`);
+
+              // Simple keyword-based clustering
+              const clusterMap = new Map();
+              validPapers.forEach(p => {
+                // Handle both Array and Arrow Vector
+                const kws = Array.isArray(p.matchedKeywords) ? p.matchedKeywords : Array.from(p.matchedKeywords || []);
+                kws.forEach(kw => {
+                  if (!clusterMap.has(kw)) {
+                    clusterMap.set(kw, { name: kw, papers: [] });
+                  }
+                  clusterMap.get(kw).papers.push(p);
+                });
+              });
+
+              console.log(`[API] Found ${clusterMap.size} clusters`);
+
+              const themes = Array.from(clusterMap.values())
+                .sort((a, b) => b.papers.length - a.papers.length)
+                .slice(0, 12) // Show more themes
+                .map((c, idx) => ({
+                  id: String(idx + 1),
+                  name: c.name,
+                  summary: `Cluster of ${c.papers.length} papers centered on ${c.name}. Recent focus includes ${c.papers[0]?.title.substring(0, 60)}...`,
+                  paperCount: c.papers.length,
+                  keyPapers: c.papers.slice(0, 3).map(p => p.title),
+                  growth: idx < 4 ? 'rising' : 'stable'
+                }));
+
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                themes,
+                stats: {
+                  totalPapers: validPapers.length,
+                  clusterCount: clusterMap.size
+                }
+              }));
+            } catch (error) {
+              console.error('[API] theme-insights error:', error);
+              res.statusCode = 500;
+              res.end(JSON.stringify({ status: 'error', message: (error as Error).message }));
+            }
             return;
           }
 

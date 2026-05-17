@@ -2,15 +2,6 @@ import './loadEnv.ts';
 import fs from 'fs';
 import path from 'path';
 import { OAuth2TokenManager, loadOAuth2Config } from './oauth2TokenManager.ts';
-import { setGlobalDispatcher, ProxyAgent } from 'undici';
-
-// Configure proxy for Node.js fetch
-const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-if (proxyUrl) {
-  const dispatcher = new ProxyAgent(proxyUrl);
-  setGlobalDispatcher(dispatcher);
-  console.log(`[GmailSync] Proxy configured: ${proxyUrl}`);
-}
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1';
 const syncedEmailsDir = path.resolve(process.cwd(), 'synced_emails');
@@ -30,6 +21,39 @@ interface RawEmail {
 }
 
 /**
+ * Fetch with retry for robustness
+ */
+async function fetchWithRetry(url: string, init: RequestInit, retries = 3, backoff = 1000): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, init);
+      // We only want to retry on 5xx errors or network failures
+      if (!response.ok && response.status >= 500) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response;
+    } catch (err: any) {
+      const isLastRetry = i === retries - 1;
+      
+      // Check for undici socket errors or general fetch failures
+      const errorMessage = err.message || String(err);
+      const isNetworkError = errorMessage.includes('fetch failed') || 
+                            errorMessage.includes('UND_ERR_SOCKET') || 
+                            (err.cause && (err.cause.message?.includes('socket') || err.cause.code === 'UND_ERR_SOCKET'));
+
+      if (isLastRetry || !isNetworkError) {
+        throw err;
+      }
+      
+      const delay = backoff * Math.pow(2, i);
+      console.warn(`[GmailSync] Fetch failed (${errorMessage}). Retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Retries failed');
+}
+
+/**
  * Fetch emails from Gmail API using server-side OAuth2
  */
 async function fetchGmailEmails(accessToken: string, hours: number, limit: number): Promise<RawEmail[]> {
@@ -44,7 +68,7 @@ async function fetchGmailEmails(accessToken: string, hours: number, limit: numbe
 
   // List messages
   const listUrl = `${GMAIL_API_BASE}/users/me/messages?q=${query}&maxResults=${limit}`;
-  const listResponse = await fetch(listUrl, {
+  const listResponse = await fetchWithRetry(listUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
@@ -69,12 +93,12 @@ async function fetchGmailEmails(accessToken: string, hours: number, limit: numbe
     const msg = messages[i];
     try {
       const msgUrl = `${GMAIL_API_BASE}/users/me/messages/${msg.id}?format=full`;
-      const msgResponse = await fetch(msgUrl, {
+      const msgResponse = await fetchWithRetry(msgUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
       if (!msgResponse.ok) {
-        console.warn(`[GmailSync] Failed to fetch message ${msg.id}`);
+        console.warn(`[GmailSync] Failed to fetch message ${msg.id} after retries`);
         continue;
       }
 

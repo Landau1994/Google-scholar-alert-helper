@@ -19,6 +19,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, stats, history 
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
     { id: 'import', icon: PlusCircle, label: 'Add Alerts' },
     { id: 'scheduled-reports', icon: CalendarClock, label: 'Daily Reports' },
+    { id: 'archive', icon: Clock, label: 'Historical Search' },
+    { id: 'themes', icon: BookOpen, label: 'Theme Insights' },
     { id: 'keywords', icon: Bookmark, label: 'My Keywords' },
     { id: 'settings', icon: Settings, label: 'Settings' },
   ];

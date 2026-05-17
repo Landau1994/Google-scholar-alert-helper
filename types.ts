@@ -64,4 +64,4 @@ export interface ScheduledReportItem {
   type: 'papers' | 'review';
 }
 
-export type ViewState = 'dashboard' | 'import' | 'keywords' | 'settings' | 'preview' | 'scheduled-reports';
+export type ViewState = 'dashboard' | 'import' | 'keywords' | 'settings' | 'preview' | 'scheduled-reports' | 'archive' | 'themes';

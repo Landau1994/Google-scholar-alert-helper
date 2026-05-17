@@ -468,6 +468,17 @@ This hybrid approach ensures:
 
 ## Web UI Features
 
+### Semantic Historical Search & Theme Insights
+
+ScholarPulse now includes advanced vector-based features for exploring your academic history:
+
+1. **Historical Archive**: Use the search bar to find papers semantically. You can search by concepts (e.g., "mTOR signaling") and the AI will find relevant papers even if they don't contain those exact keywords, thanks to LanceDB vector embeddings.
+2. **Theme Insights**: Automatically clusters your historical papers into research themes.
+   - **Explore Clusters**: View the top papers defining each theme.
+   - **Time Filtering**: Filter clusters by "Last 7 Days", "Last 30 Days", "Last 90 Days", "Last Year", or "All Time".
+   - **Generate Summaries**: Instantly generate an AI literature review for any theme within your selected timeframe, complete with an auto-generated reference list and a one-click copy button.
+   - **Track Custom Themes**: If a specific keyword (e.g., "Marfan Syndrome") isn't in the top automatic clusters, you can manually track it to generate instant summaries.
+
 ### System Logs Viewer
 
 The app includes a real-time system logs viewer for debugging and monitoring:

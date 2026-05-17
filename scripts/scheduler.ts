@@ -7,6 +7,7 @@ import type { Paper } from '../types.ts';
 import { syncGmailEmails } from './syncGmail.ts';
 import { validateExtraction, refineAndSave } from './validatePaperTitles.ts';
 import { extractArticlesFromEmail } from '../services/emailArticleExtractor.ts';
+import { indexPapers } from '../services/vectorService.ts';
 
 if (!process.env.VITE_GEMINI_API_KEY) {
   console.error("[Scheduler] No API Key found in .env.local");
@@ -748,6 +749,15 @@ async function generateDailyReport(): Promise<void> {
         // Store the filename so Step 2 can use ONLY this file (not aggregate with old files)
         // This prevents confusion when testing with --hours parameter
         (globalThis as any).__currentExtractionFile = extractionFilename;
+
+        // NEW: Index papers into vector database for search and theme analysis
+        console.log(`[Scheduler] Indexing ${dedupedPapers.length} papers into vector database...`);
+        try {
+          await indexPapers(dedupedPapers);
+          console.log(`[Scheduler] Vector indexing complete.`);
+        } catch (vectorError) {
+          console.error(`[Scheduler] Vector indexing failed:`, vectorError);
+        }
       } else {
         console.log('[Scheduler] No papers passed the minScore filter, skipping save');
       }

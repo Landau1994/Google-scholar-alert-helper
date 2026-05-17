@@ -12,7 +12,9 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Preview from './components/Preview';
 import LogViewer from './components/LogViewer';
 import ScheduledReports from './components/ScheduledReports';
-import { Bell, BookOpen, Settings, LayoutDashboard, PlusCircle, Search, Mail, CheckCircle, AlertCircle, Loader2, Copy, ExternalLink, HelpCircle, Download, ArrowRight, X, FileText, History, Terminal, CalendarClock } from 'lucide-react';
+import ArchiveView from './components/ArchiveView';
+import ThemesView from './components/ThemesView';
+import { Bell, BookOpen, Settings, LayoutDashboard, PlusCircle, Search, Mail, CheckCircle, AlertCircle, Loader2, Copy, ExternalLink, HelpCircle, Download, ArrowRight, X, FileText, History, Terminal, CalendarClock, Clock } from 'lucide-react';
 
 const INITIAL_KEYWORDS: Keyword[] = [
   { id: '1', text: 'Aortic Disease', color: 'bg-blue-100 text-blue-700' },
@@ -844,6 +846,8 @@ const AppContent: React.FC = () => {
               {view === 'settings' && 'Settings'}
               {view === 'preview' && 'Review Emails'}
               {view === 'scheduled-reports' && 'Daily Reports'}
+              {view === 'archive' && 'Historical Search'}
+              {view === 'themes' && 'Theme Insights'}
             </h1>
             {isLoading && (
               <div className="flex items-center gap-3 px-4 py-1.5 bg-blue-50 text-blue-700 rounded-full text-xs font-medium border border-blue-100">
@@ -982,6 +986,8 @@ const AppContent: React.FC = () => {
               }}
             />
           )}
+          {view === 'archive' && <ArchiveView />}
+          {view === 'themes' && <ThemesView />}
           {view === 'settings' && (
             <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-slate-200 space-y-8 animate-in fade-in duration-500">
               <div>
