@@ -896,7 +896,7 @@ const estimateTokens = (text: string): number => {
 
 /**
  * Maximum input tokens for Gemini models (conservative limits to leave room for response)
- * gemini-3-pro-preview and gemini-3-flash-preview: ~1M tokens, but we use 800k to be safe
+ * gemini-3-pro-preview and gemini-3.1-flash-lite: ~1M tokens, but we use 800k to be safe
  */
 const MAX_INPUT_TOKENS = 800000;
 
@@ -1300,7 +1300,7 @@ export const processScholarEmails = async (
   try {
     // Try primary model first with retry
     try {
-      const result = await generateWithRetry('gemini-3-flash-preview');
+      const result = await generateWithRetry('gemini-3.1-flash-lite');
       processResult(result);
       logger.success(`Successfully extracted ${result.papers.length} papers (with source weights + keyword adjustments)`);
       return result;
@@ -1554,11 +1554,11 @@ ${structuredContent}`;
     try {
       const response = await executeWithRetry(async () => {
         return await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-3.1-flash-lite',
           contents: prompt,
           config: { responseMimeType: "application/json", responseSchema: simpleSchema }
         });
-      }, 'gemini-3-flash-preview', 3);
+      }, 'gemini-3.1-flash-lite', 3);
 
       const jsonStr = response.text;
       if (!jsonStr) throw new Error("Empty response");
@@ -1752,14 +1752,14 @@ ${chunk.content}`;
 
     const response = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3.1-flash-lite',
         contents: prompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: simpleSchema
         }
       });
-    }, 'gemini-3-flash-preview', 3);
+    }, 'gemini-3.1-flash-lite', 3);
 
     const result = JSON.parse(response.text || '{"papers":[]}');
 
@@ -1957,11 +1957,11 @@ ${structuredContent}`;
   try {
     const response = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3.1-flash-lite',
         contents: prompt,
         config: { responseMimeType: "application/json", responseSchema: simpleSchema }
       });
-    }, 'gemini-3-flash-preview', 3);
+    }, 'gemini-3.1-flash-lite', 3);
 
     const jsonStr = response.text;
     if (!jsonStr) throw new Error("Empty response");
@@ -2281,10 +2281,10 @@ Write the review now:`;
   try {
     const response = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3.1-flash-lite',
         contents: prompt
       });
-    }, 'gemini-3-flash-preview', 5);
+    }, 'gemini-3.1-flash-lite', 5);
 
     logger.info(`[Lightweight] Review generated successfully`);
     return response.text || "Failed to generate report.";
@@ -2337,11 +2337,11 @@ const generateLiteratureReviewSegmented = async (
 
     const outlineResponse = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3-flash-preview', // Use Flash for structure/routing (faster, larger context)
+        model: 'gemini-3.1-flash-lite', // Use Flash for structure/routing (faster, larger context)
         contents: outlinePrompt,
         config: { responseMimeType: "application/json" }
       });
-    }, 'gemini-3-flash-preview', 5); // Increased retries for reliability
+    }, 'gemini-3.1-flash-lite', 5); // Increased retries for reliability
 
     const outline = JSON.parse(outlineResponse.text || "{}");
     if (!outline.themes) throw new Error("Failed to generate outline themes.");

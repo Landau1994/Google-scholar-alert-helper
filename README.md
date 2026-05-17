@@ -778,7 +778,7 @@ The app exposes these internal API endpoints (available when running `npm run de
 - **Improved**: Unified scoring prompts across all components
   - Web app (`processScholarEmails`), scheduler (`processScholarEmailsLightweight`), and test script (`testScoring.ts`) now use identical scoring criteria
   - Added detailed examples in prompts for more consistent AI scoring
-  - Changed testScoring.ts model from `gemini-2.0-flash` to `gemini-3-flash-preview` for consistency
+  - Changed testScoring.ts model from `gemini-2.0-flash` to `gemini-3.1-flash-lite` for consistency
 
 ### 2026-01-16
 - **Added**: Aggressive penalty system for low-impact journals and unmatched papers
@@ -842,7 +842,7 @@ The app exposes these internal API endpoints (available when running `npm run de
   - Saves API calls when only regenerating the literature review
 - **Added**: Reference list appended to daily_review output
 - **Added**: Analysis file saved after review generation (for web app compatibility)
-- **Improved**: Uses `gemini-3-flash-preview` for lightweight review generation (more stable through proxy)
+- **Improved**: Uses `gemini-3.1-flash-lite` for lightweight review generation (more stable through proxy)
 - **Added**: Scheduler logic flow diagram in README
 
 ### 2026-01-15

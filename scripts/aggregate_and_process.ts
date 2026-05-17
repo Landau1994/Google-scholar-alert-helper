@@ -164,7 +164,7 @@ async function main() {
 
     if (filteredPapers.length > 0) {
         console.log("🚀 Starting Literature Review generation (Plan & Parallel)...");
-        console.log("Using 'gemini-3-flash-preview' for planning and 'gemini-3-pro-preview' for writing.");
+        console.log("Using 'gemini-3.1-flash-lite' for planning and 'gemini-3-pro-preview' for writing.");
         try {
             // Pass filtered papers (already filtered by minScore)
             const review = await generateLiteratureReview(filteredPapers, topKeywords);
