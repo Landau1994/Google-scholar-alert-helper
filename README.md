@@ -640,6 +640,20 @@ The app exposes these internal API endpoints (available when running `npm run de
 
 ## Changelog
 
+### 2026-05-17
+- **Added**: Advanced Semantic Historical Search (`ArchiveView.tsx`)
+  - Enables searching through thousands of historical papers using semantic concepts, rather than exact keyword matches, powered by LanceDB vector embeddings.
+- **Added**: Theme Insights and Clustering (`ThemesView.tsx`)
+  - Automatically clusters historical papers into distinct research themes to identify trends.
+  - Implemented an "Explore Cluster" feature to view the top papers defining each theme.
+  - Added a **"Track Custom Theme"** functionality allowing users to manually create and track specific topics (e.g., "Marfan Syndrome") that might not appear in auto-generated clusters.
+  - Added robust time-based filtering (Last 7 Days, 30 Days, 90 Days, 1 Year, All Time) within cluster exploration.
+  - Integrated an AI-powered **"Generate Summary"** tool that instantly generates literature reviews for specific themes and timeframes, automatically appending a formatted reference list.
+- **Fixed**: Copy to Clipboard functionality in HTTP environments
+  - Resolved an issue where the copy button in Theme Insights failed on local network IP addresses. Implemented a reliable `document.execCommand('copy')` fallback for non-HTTPS environments.
+- **Fixed**: Global proxy configuration for all API requests
+  - Updated `vite.config.ts` to utilize a global `undici` dispatcher, ensuring all outbound `fetch` requests (including those from `@google/generative-ai`) correctly route through the configured proxy.
+
 ### 2026-03-22
 - **Fixed**: Configuration overwriting in Web UI
   - Fixed a bug where saving scheduler settings (time, timezone, or enabled status) from the Settings page would overwrite the entire `scheduler.config.json` file, causing other processing parameters like `minScore`, `batchSize`, and `analysisLimit` to be lost and revert to defaults.
