@@ -640,6 +640,14 @@ The app exposes these internal API endpoints (available when running `npm run de
 
 ## Changelog
 
+### 2026-05-19
+- **Improved**: Historical Search functionality (`ArchiveView.tsx`)
+  - **Added**: Search by Journal/Source feature to filter historical papers by specific publications (e.g., "Nature", "Hypertension").
+  - **Added**: Date range filtering (Last 7 Days, 30 Days, 90 Days, 1 Year, All Time) to narrow down historical search results.
+  - **Added**: "Export Markdown" feature to download search results as a formatted report with full references.
+  - **Added**: Backend support for date-based and journal-based filtering in the vector search API and `vectorService.ts`.
+  - **Improved**: Results display with semantic similarity scores and better visual hierarchy.
+
 ### 2026-05-17
 - **Added**: Advanced Semantic Historical Search (`ArchiveView.tsx`)
   - Enables searching through thousands of historical papers using semantic concepts, rather than exact keyword matches, powered by LanceDB vector embeddings.
@@ -804,6 +812,18 @@ The app exposes these internal API endpoints (available when running `npm run de
   - Web app (`processScholarEmails`), scheduler (`processScholarEmailsLightweight`), and test script (`testScoring.ts`) now use identical scoring criteria
   - Added detailed examples in prompts for more consistent AI scoring
   - Changed testScoring.ts model from `gemini-2.0-flash` to `gemini-3.1-flash-lite` for consistency
+
+### 2026-05-18
+- **Added**: Full-lifecycle daily vectorization for research papers
+  - Implemented `/api/index-papers` endpoint in Vite middleware for web UI indexing
+  - Added `indexPapersInDb` helper in `App.tsx` to automatically vectorize papers after processing
+  - Integrated vectorization into `scripts/aggregate_and_process.ts` for manual batch processing
+  - Improved `scripts/scheduler.ts` to ensure all daily report papers are indexed
+- **Improved**: Idempotent vector indexing in `services/vectorService.ts`
+  - `indexPapers` now checks for existing paper titles before indexing to prevent duplicates
+  - Significantly reduces redundant embedding generation and storage
+- **Improved**: Historical migration script `scripts/migrateToVector.ts`
+  - Now includes `manual-import-*.json` and `import-*.json` files in the migration process
 
 ### 2026-01-16
 - **Added**: Aggressive penalty system for low-impact journals and unmatched papers

@@ -97,21 +97,36 @@ const getTable = async () => {
   }
 };
 
-/**
- * Index papers into the vector database
- */
 export const indexPapers = async (papers: Paper[]) => {
   if (papers.length === 0) return;
 
-  logger.info(`Indexing ${papers.length} papers into vector database...`);
-  
   const table = await getTable();
+  
+  // Fetch existing titles to avoid duplicates
+  const existingTitles = new Set<string>();
+  try {
+    // Only need titles for deduplication
+    const existing = await table.query().select(["title"]).limit(10000).toArray();
+    existing.forEach(p => existingTitles.add(p.title.toLowerCase().trim()));
+  } catch (e) {
+    logger.warn("Could not fetch existing titles, proceeding with potential duplicates.");
+  }
+
+  const papersToIndex = papers.filter(p => !existingTitles.has(p.title.toLowerCase().trim()));
+  
+  if (papersToIndex.length === 0) {
+    logger.info("All papers already indexed.");
+    return;
+  }
+
+  logger.info(`Indexing ${papersToIndex.length} new papers into vector database (skipped ${papers.length - papersToIndex.length} duplicates)...`);
+  
   const vectorPapers: VectorPaper[] = [];
 
   // Process in small batches to avoid API limits
   const BATCH_SIZE = 20;
-  for (let i = 0; i < papers.length; i += BATCH_SIZE) {
-    const batch = papers.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < papersToIndex.length; i += BATCH_SIZE) {
+    const batch = papersToIndex.slice(i, i + BATCH_SIZE);
     const textsToEmbed = batch.map(p => `Title: ${p.title}\nSource: ${p.source}\nAbstract: ${p.snippet || ''}`);
     
     try {
@@ -125,30 +140,47 @@ export const indexPapers = async (papers: Paper[]) => {
         });
       });
       
-      logger.info(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(papers.length / BATCH_SIZE)}`);
+      logger.info(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(papersToIndex.length / BATCH_SIZE)}`);
     } catch (error) {
       logger.error(`Failed to process batch starting at index ${i}:`, error);
     }
   }
 
   if (vectorPapers.length > 0) {
-    await table.add(vectorPapers);
+    await table.add(vectorPapers as any);
     logger.success(`Successfully indexed ${vectorPapers.length} papers.`);
   }
 };
 
 /**
- * Semantic search for papers
+ * Semantic search for papers with optional filtering
  */
-export const searchPapers = async (query: string, limit: number = 20) => {
+export const searchPapers = async (query: string | null | undefined, limit: number = 20, filter?: string) => {
   const table = await getTable();
-  const queryVector = await generateEmbedding(query);
   
-  const results = await table
-    .vectorSearch(queryVector)
-    .limit(limit)
-    .toArray();
+  if (query && query.trim()) {
+    const queryVector = await generateEmbedding(query);
+    let search = table.vectorSearch(queryVector).limit(limit);
     
-  // Filter out the dummy schema record if it appears
-  return results.filter(r => r.id !== "schema-definition");
+    if (filter) {
+      search = search.where(filter);
+    }
+    
+    const results = await search.toArray();
+    return results.filter(r => r.id !== "schema-definition");
+  } else {
+    // If no semantic query, perform a scalar query and sort by newest first
+    let search = table.query();
+    if (filter) {
+      search = search.where(filter);
+    }
+    
+    let results = await search.toArray();
+    results = results.filter(r => r.id !== "schema-definition");
+    
+    // Sort by date descending (newest first)
+    results.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    return results.slice(0, limit);
+  }
 };

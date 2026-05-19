@@ -443,6 +443,39 @@ export default defineConfig({
             return;
           }
 
+          // API: Index Papers - vectorizes a list of papers
+          if (url === '/api/index-papers' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => {
+              body += chunk.toString();
+            });
+            req.on('end', async () => {
+              try {
+                const { papers } = JSON.parse(body || '{}');
+
+                if (!papers || !Array.isArray(papers)) {
+                  res.statusCode = 400;
+                  res.end(JSON.stringify({ status: 'error', message: 'Missing or invalid papers array' }));
+                  return;
+                }
+
+                console.log(`[API] Indexing ${papers.length} papers...`);
+                
+                // Dynamic import vectorService
+                const { indexPapers } = await import('./services/vectorService.ts');
+                await indexPapers(papers);
+
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ status: 'success', count: papers.length }));
+              } catch (error) {
+                console.error('[API] index-papers error:', error);
+                res.statusCode = 500;
+                res.end(JSON.stringify({ status: 'error', message: (error as Error).message }));
+              }
+            });
+            return;
+          }
+
           // OAuth2 callback page - exchanges code for tokens
           if (url.startsWith('/oauth2callback') && req.method === 'GET') {
             const urlObj = new URL(url, `http://${req.headers.host}`);
@@ -556,18 +589,40 @@ export default defineConfig({
               const urlObj = new URL(url, `http://${req.headers.host}`);
               const query = urlObj.searchParams.get('q');
               const limit = parseInt(urlObj.searchParams.get('limit') || '20');
+              const days = urlObj.searchParams.get('days');
+              const source = urlObj.searchParams.get('source');
 
-              if (!query) {
+              if (!query && !source && !days) {
                 res.statusCode = 400;
-                res.end(JSON.stringify({ status: 'error', message: 'Missing query parameter q' }));
+                res.end(JSON.stringify({ status: 'error', message: 'Provide at least a query, source, or timeframe' }));
                 return;
               }
 
-              console.log(`[API] Vector search for: "${query}" (limit: ${limit})`);
+              let filters: string[] = [];
+              
+              if (days && !isNaN(parseInt(days))) {
+                const cutoffDate = new Date();
+                cutoffDate.setDate(cutoffDate.getDate() - parseInt(days));
+                const dateStr = cutoffDate.toISOString().split('T')[0];
+                filters.push(`date >= '${dateStr}'`);
+              }
+
+              if (source && source.trim()) {
+                // Using SQL-like LIKE for partial matching if supported, otherwise exact match
+                // LanceDB supports some SQL expressions
+                filters.push(`source LIKE '%${source.replace(/'/g, "''")}%'`);
+              }
+
+              const filter = filters.length > 0 ? filters.join(' AND ') : undefined;
+              if (filter) {
+                console.log(`[API] Vector search filter: ${filter}`);
+              }
+
+              console.log(`[API] Vector search for: "${query}" (limit: ${limit}, filter: ${filter || 'none'})`);
 
               // Dynamic import vectorService
               const { searchPapers } = await import('./services/vectorService.ts');
-              const results = await searchPapers(query, limit);
+              const results = await searchPapers(query, limit, filter);
 
               console.log(`[API] Vector search found ${results.length} results`);
 
