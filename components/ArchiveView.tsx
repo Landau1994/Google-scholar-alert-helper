@@ -12,6 +12,7 @@ type TimeFilter = 'all' | '7' | '30' | '90' | '365';
 const ArchiveView: React.FC = () => {
   const [query, setQuery] = useState('');
   const [journal, setJournal] = useState('');
+  const [exactJournal, setExactJournal] = useState(false);
   const [days, setDays] = useState<TimeFilter>('all');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,7 +35,10 @@ const ArchiveView: React.FC = () => {
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.append('q', query.trim());
-      if (journal.trim()) params.append('source', journal.trim());
+      if (journal.trim()) {
+        params.append('source', journal.trim());
+        if (exactJournal) params.append('exact_source', 'true');
+      }
       params.append('limit', '50');
       if (activeDays !== 'all') params.append('days', activeDays);
 
@@ -68,7 +72,7 @@ const ArchiveView: React.FC = () => {
       let markdown = `# ScholarPulse Historical Search Results\n\n`;
       markdown += `**Query**: ${query}\n`;
       if (journal.trim()) {
-        markdown += `**Journal/Source**: ${journal.trim()}\n`;
+        markdown += `**Journal/Source**: ${journal.trim()} ${exactJournal ? '(Exact Match)' : '(Partial Match)'}\n`;
       }
       markdown += `**Filter**: ${days === 'all' ? 'All Time' : `Last ${days} Days`}\n`;
       markdown += `**Date**: ${new Date().toLocaleString()}\n`;
@@ -128,21 +132,32 @@ const ArchiveView: React.FC = () => {
               />
             </div>
             
-            <div className="flex gap-3">
-              <div className="relative flex-1">
-                <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input
-                  type="text"
-                  value={journal}
-                  onChange={(e) => setJournal(e.target.value)}
-                  placeholder="Filter by journal or source (e.g., 'Nature', 'bioRxiv')..."
-                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm"
-                />
+            <div className="flex gap-3 items-start">
+              <div className="relative flex-1 flex flex-col gap-2">
+                <div className="relative">
+                  <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={journal}
+                    onChange={(e) => setJournal(e.target.value)}
+                    placeholder="Filter by journal or source (e.g., 'Nature', 'bioRxiv')..."
+                    className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-500 ml-2 cursor-pointer w-max font-medium">
+                  <input 
+                    type="checkbox" 
+                    checked={exactJournal}
+                    onChange={(e) => setExactJournal(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Exact match (e.g., match "Nature" but not "Nature Medicine")
+                </label>
               </div>
               <button
                 type="submit"
                 disabled={isLoading || (!query.trim() && !journal.trim() && days === 'all')}
-                className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-900/20 active:scale-95 flex items-center gap-2"
+                className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-900/20 active:scale-95 flex items-center gap-2 h-[46px]"
               >
                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
                   <>

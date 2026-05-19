@@ -591,6 +591,7 @@ export default defineConfig({
               const limit = parseInt(urlObj.searchParams.get('limit') || '20');
               const days = urlObj.searchParams.get('days');
               const source = urlObj.searchParams.get('source');
+              const exactSource = urlObj.searchParams.get('exact_source') === 'true';
 
               if (!query && !source && !days) {
                 res.statusCode = 400;
@@ -608,9 +609,12 @@ export default defineConfig({
               }
 
               if (source && source.trim()) {
-                // Using SQL-like LIKE for partial matching if supported, otherwise exact match
-                // LanceDB supports some SQL expressions
-                filters.push(`source LIKE '%${source.replace(/'/g, "''")}%'`);
+                const cleanSource = source.trim().replace(/'/g, "''");
+                if (exactSource) {
+                  filters.push(`source = '${cleanSource}'`);
+                } else {
+                  filters.push(`source LIKE '%${cleanSource}%'`);
+                }
               }
 
               const filter = filters.length > 0 ? filters.join(' AND ') : undefined;
