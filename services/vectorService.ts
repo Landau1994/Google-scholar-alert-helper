@@ -22,17 +22,41 @@ const EMBEDDING_MODEL = "gemini-embedding-2"; // Fallback to 004 if 2 is too new
 const VECTOR_DB_PATH = path.resolve(process.cwd(), "data/vector_db");
 
 /**
+ * Execute an action with retry logic
+ */
+const executeWithRetry = async <T>(
+  action: () => Promise<T>,
+  taskName: string,
+  maxRetries: number = 3
+): Promise<T> => {
+  let lastError: any;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await action();
+    } catch (error: any) {
+      lastError = error;
+      const errorMsg = error?.message || error?.toString() || "";
+      const isRateLimit = errorMsg.includes("429") || errorMsg.toLowerCase().includes("rate limit") || errorMsg.toLowerCase().includes("quota");
+      
+      if (attempt < maxRetries) {
+        const waitTime = isRateLimit ? Math.min(1000 * Math.pow(2, attempt + 1), 30000) : 2000 * attempt;
+        logger.warn(`${taskName} failed (attempt ${attempt}/${maxRetries}): ${errorMsg}. Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+  throw lastError;
+};
+
+/**
  * Generate embeddings for a given text using Gemini
  */
 export const generateEmbedding = async (text: string): Promise<number[]> => {
-  try {
+  return await executeWithRetry(async () => {
     const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
     const result = await model.embedContent(text);
     return result.embedding.values;
-  } catch (error) {
-    logger.error(`Error generating embedding with ${EMBEDDING_MODEL}:`, error);
-    throw error;
-  }
+  }, "Generate embedding");
 };
 
 /**
@@ -40,14 +64,15 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
  */
 export const generateBatchEmbeddings = async (texts: string[]): Promise<number[][]> => {
   try {
-    const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
-    const result = await model.batchEmbedContents({
-      requests: texts.map(t => ({ content: { role: 'user', parts: [{ text: t }] } }))
-    });
-    return result.embeddings.map(e => e.values);
+    return await executeWithRetry(async () => {
+      const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
+      const result = await model.batchEmbedContents({
+        requests: texts.map(t => ({ content: { role: 'user', parts: [{ text: t }] } }))
+      });
+      return result.embeddings.map(e => e.values);
+    }, "Generate batch embeddings");
   } catch (error) {
-    logger.error(`Error generating batch embeddings:`, error);
-    // Fallback to sequential if batch fails
+    logger.error(`Batch embedding failed after retries, falling back to sequential:`, error);
     const results: number[][] = [];
     for (const text of texts) {
       results.push(await generateEmbedding(text));
@@ -141,6 +166,11 @@ export const indexPapers = async (papers: Paper[]) => {
       });
       
       logger.info(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(papersToIndex.length / BATCH_SIZE)}`);
+      
+      // Add a small delay between batches to be nice to the API
+      if (i + BATCH_SIZE < papersToIndex.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     } catch (error) {
       logger.error(`Failed to process batch starting at index ${i}:`, error);
     }

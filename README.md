@@ -640,6 +640,11 @@ The app exposes these internal API endpoints (available when running `npm run de
 
 ## Changelog
 
+### 2026-05-21
+- **Fixed**: Missing papers in "Historical Search" by implementing more robust vector indexing.
+- **Improved**: Added retry logic and batch delays to `vectorService.ts` to prevent silent indexing failures.
+- **Fixed**: Manually re-indexed missing papers from the past several days to restore archive completeness.
+
 ### 2026-05-19
 - **Improved**: Historical Search functionality (`ArchiveView.tsx`)
   - **Added**: Search by Journal/Source feature to filter historical papers by specific publications (e.g., "Nature", "Hypertension").
