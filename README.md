@@ -638,7 +638,15 @@ The app exposes these internal API endpoints (available when running `npm run de
 | `/api/validate-refine` | POST | Validate papers and generate refined analysis |
 | `/oauth2callback` | GET | Handle OAuth2 callback |
 
+## License
+
+This project is licensed under the [GNU General Public License v3.0 or later](./LICENSE).
+
 ## Changelog
+
+### 2026-05-23
+- **Added**: GPL-3.0 open-source license.
+- **Changed**: Updated `package.json` and `README.md` to reflect the new open-source status.
 
 ### 2026-05-21
 - **Fixed**: Missing papers in "Historical Search" by implementing more robust vector indexing.
