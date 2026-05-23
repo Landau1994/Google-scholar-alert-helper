@@ -94,6 +94,15 @@ This weighting ensures that peer-reviewed publications from prestigious journals
 - Smart extraction skipping to avoid redundant API calls
 - Batch processing with rate limiting to respect API quotas
 
+#### 3.2.6 Persistent Vector Storage and Semantic Search
+- Integration with LanceDB for efficient, high-dimensional vector storage
+- Semantic deduplication across diverse alert sources
+- Historical search capabilities enabling longitudinal literature tracking
+
+#### 3.2.7 Open Source Commitment
+- Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later)
+- Promoting transparency, collaboration, and community-driven improvement in academic tooling
+
 ---
 
 ## 4. Technical Innovation
@@ -119,6 +128,13 @@ Researchers can customize the filtering behavior through:
 - Adjustable minimum relevance scores (`minScore`)
 - Custom keyword lists for domain-specific filtering
 - Batch size and processing limits for resource management
+
+### 4.4 Semantic Memory and Persistent Indexing
+
+The system moves beyond transient processing by implementing a persistent vector-based semantic memory. This allows ScholarPulse to "remember" previously analyzed papers even across different alert sources, facilitating:
+- **Cross-Service Deduplication**: Identifying the same paper appearing in bioRxiv and later in a journal alert.
+- **Trend Analysis**: Tracking the evolution of topics over time through indexed embeddings.
+- **Enhanced Retrieval**: Providing low-latency semantic search across the entire historical collection.
 
 ---
 
@@ -158,6 +174,7 @@ The system generates timestamped reports and analysis files, creating an auditab
 | Multi-source aggregation | Manual | Limited | Automatic |
 | Scheduled operation | No | No | Yes |
 | Custom keyword filtering | No | Yes | Yes |
+| Vector database indexing | No | No | Yes |
 
 ---
 
@@ -183,4 +200,4 @@ As the volume of scientific publications continues to grow, tools like ScholarPu
 
 ---
 
-*Report generated for ScholarPulse v2026.01*
+*Report updated for ScholarPulse v2026.05*
