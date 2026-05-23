@@ -664,7 +664,7 @@ This project is licensed under the [GNU General Public License v3.0 or later](./
 ### 2026-05-23
 - **Added**: GPL-3.0 open-source license.
 - **Changed**: Updated `package.json` and `README.md` to reflect the new open-source status.
-- **Improved**: Updated `ACADEMIC_REPORT.md` to include technical details on vector database indexing and open-source licensing.
+- **Improved**: Comprehensive update to `ACADEMIC_REPORT.md` including detailed hybrid scoring formulas, tiered source weighting (up to 1.5x), and technical integrity mechanisms for hallucination mitigation.
 
 ### 2026-05-21
 - **Fixed**: Missing papers in "Historical Search" by implementing more robust vector indexing.

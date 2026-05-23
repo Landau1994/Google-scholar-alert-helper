@@ -72,17 +72,21 @@ ScholarPulse is an AI-powered academic literature monitoring system that automat
 
 #### 3.2.3 Relevance Scoring with Source Weighting
 
-The system implements a sophisticated scoring mechanism that accounts for publication source quality:
+The system implements a sophisticated tiered scoring mechanism that accounts for publication source quality and prestige:
 
 | Source Category | Weight Multiplier | Rationale |
 |-----------------|-------------------|-----------|
-| Nature, Cell Press | 1.3x | High-impact peer-reviewed journals |
-| AHA Journals | 1.2x | Specialty peer-reviewed |
-| Elsevier, Springer | 1.1x | Established publishers |
-| Google Scholar | 0.8x | Mixed quality sources |
-| bioRxiv/medRxiv | 0.7x | Non-peer-reviewed preprints |
+| Nature, Science, Cell, Lancet, NEJM | 1.5x | Premier high-impact peer-reviewed |
+| EHJ, Circulation, Blood, Nature/Cell subs | 1.3x | High-impact specialty journals |
+| PNAS, JAMA, AHA subs, Cell Press subs | 1.2x | Established high-quality specialty |
+| Elsevier, Springer, Wiley | 1.0x | Standard peer-reviewed baseline |
+| Conference/Proceedings | 0.8x | Peer-reviewed meeting abstracts |
+| Google Scholar | 0.7x | Mixed quality search results |
+| bioRxiv/medRxiv/arXiv | 0.6x | Non-peer-reviewed preprints |
+| Frontiers, MDPI, Hindawi | 0.5x | Variable quality open access |
+| Unknown/Unrecognized | 0.2x | Heavily penalized for verification |
 
-This weighting ensures that peer-reviewed publications from prestigious journals are prioritized over preprints when applying relevance thresholds.
+This weighting ensures that peer-reviewed publications from prestigious journals are prioritized over preprints and lower-tier sources when applying relevance thresholds.
 
 #### 3.2.4 Automated Literature Review Generation
 - AI-synthesized daily literature reviews
@@ -129,12 +133,25 @@ Researchers can customize the filtering behavior through:
 - Custom keyword lists for domain-specific filtering
 - Batch size and processing limits for resource management
 
+The system implements a **Hybrid Relevance Scoring** algorithm that combines AI semantic understanding with deterministic matching:
+`Final Score = max(0, min(100, AI Base Score + Keyword Bonus - Penalties)) × Source Weight`
+
+- **Keyword Bonuses**: Programmatically awarded for exact or partial matches in titles and snippets (e.g., +20 for exact title match).
+- **Penalties**: Applied for irrelevant research areas (e.g., -25 for penalty keywords in title) and for non-preprint papers that lack any keyword matches (-20).
+
 ### 4.4 Semantic Memory and Persistent Indexing
 
 The system moves beyond transient processing by implementing a persistent vector-based semantic memory. This allows ScholarPulse to "remember" previously analyzed papers even across different alert sources, facilitating:
 - **Cross-Service Deduplication**: Identifying the same paper appearing in bioRxiv and later in a journal alert.
 - **Trend Analysis**: Tracking the evolution of topics over time through indexed embeddings.
 - **Enhanced Retrieval**: Providing low-latency semantic search across the entire historical collection.
+
+### 4.5 Technical Integrity and Hallucination Mitigation
+
+To ensure the reliability of generated reports, ScholarPulse includes an automated validation layer:
+- **Title Verification**: Every extracted paper title is cross-referenced against the original HTML content of the alert emails using multiple matching strategies (exact, normalized, and fuzzy).
+- **Hallucination Removal**: Papers that cannot be verified in the source material (i.e., those fabricated by the LLM) are automatically flagged and removed before the final literature review is synthesized.
+- **Data Fidelity**: By acting as a quality gate, this validation step ensures that the AI model only synthesizes reports based on empirical data present in the scholarly alerts.
 
 ---
 
