@@ -17,7 +17,7 @@ async function migrate() {
   }
 
   const files = fs.readdirSync(SYNCED_EMAILS_DIR)
-    .filter(f => f.startsWith('analysis-') && f.endsWith('.json'));
+    .filter(f => (f.startsWith('analysis-') || f.startsWith('manual-import-') || f.startsWith('import-')) && f.endsWith('.json'));
 
   logger.info(`Found ${files.length} analysis files to process.`);
 

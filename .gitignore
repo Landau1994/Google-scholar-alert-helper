@@ -31,3 +31,11 @@ synced_emails/
 reports/
 .gemini/
 .env
+
+# Project Specific
+data/
+chrome-deps/
+ts-config.json
+consolidated_papers.md
+literature_review.md
+T-World_Analysis.md

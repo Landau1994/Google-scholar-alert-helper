@@ -17,6 +17,7 @@ Details, can be seen in [ACADEMIC_REPORT](./ACADEMIC_REPORT.md)
 | Multi-source aggregation | Manual | Limited | Automatic |
 | Scheduled operation | No | No | Yes |
 | Custom keyword filtering | No | Yes | Yes |
+| Vector database indexing | No | No | Yes |
 
 ## Run Locally
 

@@ -348,12 +348,32 @@ const AppContent: React.FC = () => {
       });
       console.log(`Successfully saved ${filename} to synced_emails folder`);
       fetchHistory(); // Refresh history
-    } catch (error) {
+      } catch (error) {
       console.error('Failed to save to local folder', error);
-    }
-  };
+      }
+      };
 
-  // Trigger validation and refinement via API (runs on server)
+      const indexPapersInDb = async (papers: Paper[]) => {
+      if (!papers || papers.length === 0) return;
+      try {
+      console.log(`Indexing ${papers.length} papers into vector DB...`);
+      const res = await fetch('/api/index-papers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ papers })
+      });
+      if (res.ok) {
+        console.log('Indexing complete');
+      } else {
+        console.error('Indexing failed with status:', res.status);
+      }
+      } catch (e) {
+      console.error('Indexing failed', e);
+      }
+      };
+
+      // Trigger validation and refinement via API (runs on server)
+
   const triggerValidateRefine = async (analysisFile?: string) => {
     try {
       console.log('Triggering validation and refinement...');
@@ -645,6 +665,9 @@ const AppContent: React.FC = () => {
       const analysisFilename = `analysis-${Date.now()}.json`;
       await saveToLocalFolder(analysisFilename, { papers: sortedPapers, summary: enhancedSummary });
 
+      // NEW: Index papers into vector database
+      await indexPapersInDb(sortedPapers);
+
       // Trigger validation and refinement (removes potential hallucinations)
       setSyncStatus({ stage: 'validating', current: 0, total: 0 });
       await triggerValidateRefine(analysisFilename);
@@ -687,6 +710,9 @@ const AppContent: React.FC = () => {
 
       // Auto-save to local folder
       await saveToLocalFolder(`manual-import-${Date.now()}.json`, { ...result, papers: sortedPapers, summary: enhancedSummary });
+
+      // NEW: Index papers into vector database
+      await indexPapersInDb(sortedPapers);
 
       setView('dashboard');
     } catch (error: any) {
@@ -950,8 +976,21 @@ const AppContent: React.FC = () => {
                const keywordTexts = keywords.map(k => k.text);
                const penaltyKeywordTexts = penaltyKeywords.map(k => k.text);
                const result = await processScholarEmails(content, keywordTexts, settings.analysisLimit, penaltyKeywordTexts);
-               setPapers(result.papers);
-               setSummary(result.summary);
+               
+               // Deduplicate and sort
+               const dedupedPapers = deduplicatePapers(result.papers);
+               const validPapers = dedupedPapers.filter(p => p.relevanceScore >= settings.minScore);
+               const sortedPapers = validPapers.sort((a, b) => b.relevanceScore - a.relevanceScore);
+               
+               setPapers(sortedPapers);
+               setSummary({ ...result.summary, papers: sortedPapers });
+
+               // Auto-save to local folder
+               await saveToLocalFolder(`import-${Date.now()}.json`, { ...result, papers: sortedPapers });
+
+               // NEW: Index papers into vector database
+               await indexPapersInDb(sortedPapers);
+
                setView('dashboard');
              } catch (error: any) {
                console.error("AI Process error:", error);

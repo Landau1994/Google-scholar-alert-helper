@@ -749,15 +749,6 @@ async function generateDailyReport(): Promise<void> {
         // Store the filename so Step 2 can use ONLY this file (not aggregate with old files)
         // This prevents confusion when testing with --hours parameter
         (globalThis as any).__currentExtractionFile = extractionFilename;
-
-        // NEW: Index papers into vector database for search and theme analysis
-        console.log(`[Scheduler] Indexing ${dedupedPapers.length} papers into vector database...`);
-        try {
-          await indexPapers(dedupedPapers);
-          console.log(`[Scheduler] Vector indexing complete.`);
-        } catch (vectorError) {
-          console.error(`[Scheduler] Vector indexing failed:`, vectorError);
-        }
       } else {
         console.log('[Scheduler] No papers passed the minScore filter, skipping save');
       }
@@ -864,6 +855,15 @@ async function generateDailyReport(): Promise<void> {
   if (papers.length === 0) {
     console.log("[Scheduler] No papers to process after deduplication.");
     return;
+  }
+
+  // Ensure all papers are indexed in vector database
+  console.log(`[Scheduler] Checking vector indexing for ${papers.length} papers...`);
+  try {
+    await indexPapers(papers);
+    console.log(`[Scheduler] Vector indexing check complete.`);
+  } catch (vectorError) {
+    console.error(`[Scheduler] Vector indexing failed:`, vectorError);
   }
 
   // Sort by relevance
