@@ -30,6 +30,22 @@ Details, can be seen in [ACADEMIC_REPORT](./ACADEMIC_REPORT.md)
 3. Run the app:
    `npm run dev`
 
+## Storage & Directories
+
+The application automatically creates several directories for data persistence. These are added to `.gitignore` to protect your personal data and avoid bloating the repository:
+
+- `data/`: Contains the LanceDB vector database for historical search and themes.
+- `synced_emails/`: Stores raw emails synced from Gmail and AI analysis results.
+- `reports/`: Stores generated daily literature reviews and paper lists.
+- `chrome-deps/`: (Optional) Browser dependencies if running specific extraction tasks.
+
+**Configuration Files:**
+- `keywords.json`: Automatically created from `keywords.json.example`. Stores your research interests and penalty keywords.
+- `scheduler.config.json`: Stores scheduler settings like run time and filtering thresholds.
+- `oauth2_tokens.json`: Stores Gmail API refresh tokens (created after first authorization).
+
+**Note:** You do not need to create these manually; they will be initialized on the first run.
+
 ## Run as Background Service (pm2)
 
 To keep the app running persistently (survives terminal close):
