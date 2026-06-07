@@ -90,6 +90,11 @@ const SOURCE_WEIGHT_MULTIPLIERS: Record<string, number> = {
   'Circulation': 1.3,
   'Circulation Research': 1.3,
   'European Heart Journal': 1.3,
+  'JACC': 1.3,
+  'JACC: Cardiovascular Imaging': 1.3,
+  'JACC: Heart Failure': 1.3,
+  'JACC: Clinical Electrophysiology': 1.3,
+  'Cardiovascular Research': 1.3,
   'Blood': 1.3,
 
   // Other journals and publishers
@@ -197,6 +202,12 @@ export const getSourceMultiplier = (source: string): number => {
 
   // Generic Circulation match (for variations) (1.3x)
   if (lowerSource.includes('circulation')) return 1.3;
+
+  // JACC journals (1.3x)
+  if (lowerSource.includes('jacc')) return 1.3;
+
+  // European Society of Cardiology flagship (1.3x)
+  if (lowerSource === 'cardiovascular research' || lowerSource.includes('european heart journal')) return 1.3;
 
   // AHA Journals (general fallback) (1.2x)
   if (lowerSource.includes('aha') || lowerSource.includes('heart')) return 1.2;

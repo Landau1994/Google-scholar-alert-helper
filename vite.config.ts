@@ -381,6 +381,7 @@ export default defineConfig({
                 res.end(JSON.stringify({ authorized: false }));
                 return;
               }
+              const stat = fs.statSync(tokenPath);
               const tokens = JSON.parse(fs.readFileSync(tokenPath, 'utf-8'));
               const hasRefreshToken = !!tokens.refresh_token;
               const isExpired = Date.now() >= tokens.expiry_date;
@@ -389,8 +390,26 @@ export default defineConfig({
               res.end(JSON.stringify({
                 authorized: hasRefreshToken,
                 accessTokenExpired: isExpired,
-                expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date).toLocaleString() : null
+                expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date).toLocaleString() : null,
+                lastUpdated: stat.mtime.toISOString()
               }));
+            } catch (error) {
+              res.statusCode = 500;
+              res.end(JSON.stringify({ status: 'error', message: (error as Error).message }));
+            }
+            return;
+          }
+
+          // API: OAuth2 - Reset/Delete token
+          if (url === '/api/oauth2/reset' && req.method === 'POST') {
+            try {
+              const tokenPath = path.resolve(__dirname, 'oauth2_tokens.json');
+              if (fs.existsSync(tokenPath)) {
+                fs.unlinkSync(tokenPath);
+                console.log('[API] Server-side Gmail authorization reset (deleted tokens file)');
+              }
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ status: 'success' }));
             } catch (error) {
               res.statusCode = 500;
               res.end(JSON.stringify({ status: 'error', message: (error as Error).message }));

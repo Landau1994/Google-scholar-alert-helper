@@ -240,6 +240,8 @@ const AppContent: React.FC = () => {
     authorized: boolean;
     configured: boolean;
     loading: boolean;
+    lastUpdated?: string;
+    expiryDate?: string;
   }>({ authorized: false, configured: false, loading: true });
 
   const [serverAuthConfig, setServerAuthConfig] = useState({
@@ -261,6 +263,8 @@ const AppContent: React.FC = () => {
         authorized: statusData.authorized || false,
         configured: configData.configured || false,
         loading: false,
+        lastUpdated: statusData.lastUpdated || undefined,
+        expiryDate: statusData.expiryDate || undefined,
       });
 
       if (configData.client_id) {
@@ -1264,12 +1268,75 @@ const AppContent: React.FC = () => {
                         <Loader2 className="w-5 h-5 animate-spin mx-auto text-green-600" />
                       </div>
                     ) : serverAuthStatus.authorized ? (
-                      <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-green-200">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                        <div>
-                          <p className="text-sm font-medium text-green-800">Server-Side Auth Active</p>
-                          <p className="text-xs text-green-600">Scheduler can automatically sync emails</p>
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-green-200">
+                          <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-green-800">Server-Side Auth Active / 运行中</p>
+                            <p className="text-xs text-green-600">Scheduler can automatically sync emails / 调度器已启动自动同步</p>
+                          </div>
                         </div>
+
+                        {serverAuthStatus.lastUpdated && (
+                          <div className="text-xs text-green-700 bg-white/50 p-3 rounded-lg border border-green-100/50 space-y-1.5">
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium text-green-800">上次更新 / Last Updated:</span>
+                              <span className="font-mono">{new Date(serverAuthStatus.lastUpdated).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium text-green-800">已过去 / Days Elapsed:</span>
+                              <span className="font-semibold text-green-900">
+                                {(() => {
+                                  const diffMs = Date.now() - new Date(serverAuthStatus.lastUpdated!).getTime();
+                                  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+                                  if (diffDays < 1) {
+                                    const diffHours = diffMs / (1000 * 60 * 60);
+                                    if (diffHours < 1) {
+                                      const diffMins = diffMs / (1000 * 60);
+                                      return diffMins < 1 ? '刚刚 / Just now' : `${Math.floor(diffMins)} 分钟前 / ${Math.floor(diffMins)}m ago`;
+                                    }
+                                    return `${Math.floor(diffHours)} 小时前 / ${Math.floor(diffHours)}h ago`;
+                                  }
+                                  return `${diffDays.toFixed(1)} 天前 / ${diffDays.toFixed(1)} days ago`;
+                                })()}
+                              </span>
+                            </div>
+                            {serverAuthStatus.expiryDate && (
+                              <div className="flex justify-between items-center pt-1 border-t border-green-100 border-dashed">
+                                <span className="font-medium text-green-800">Access Token Expiry:</span>
+                                <span className="font-mono text-[10px]">{serverAuthStatus.expiryDate}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Are you sure you want to reset server-side Gmail authorization? This will delete the saved token file.\n\n确定要重置服务器端 Gmail 授权吗？这会删除已保存的 Token 文件。')) {
+                              return;
+                            }
+                            try {
+                              setServerAuthStatus(prev => ({ ...prev, loading: true }));
+                              const res = await fetch('/api/oauth2/reset', { method: 'POST' });
+                              const data = await res.json();
+                              if (data.status === 'success') {
+                                await fetchServerAuthStatus();
+                              } else {
+                                alert('Failed to reset authorization: ' + (data.message || 'Unknown error'));
+                                setServerAuthStatus(prev => ({ ...prev, loading: false }));
+                              }
+                            } catch (e) {
+                              alert('Failed to reset authorization / 重置授权失败');
+                              setServerAuthStatus(prev => ({ ...prev, loading: false }));
+                            }
+                          }}
+                          className="w-full px-4 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Reset / Re-authorize Gmail (重置 / 重新授权)
+                        </button>
                       </div>
                     ) : (
                       <div className="space-y-4">
