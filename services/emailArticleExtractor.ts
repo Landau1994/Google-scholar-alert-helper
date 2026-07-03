@@ -480,8 +480,8 @@ function extractNatureArticles(html: string, journalName: string = 'Nature'): Ex
 
   const htmlLower = html.toLowerCase();
 
-  // Find the three research subsections: News & Views, Reviews, Articles
-  const researchSectionNames = ['news &amp; views', 'news & views', 'reviews', 'articles'];
+  // Find the research subsections: News & Views, Reviews, Perspectives, Articles
+  const researchSectionNames = ['news &amp; views', 'news & views', 'reviews', 'perspective', 'perspectives', 'articles'];
 
   for (const sectionName of researchSectionNames) {
     const pattern = new RegExp(`<h[23][^>]*>\\s*${sectionName}[^<]*<\\/h[23]>`, 'i');

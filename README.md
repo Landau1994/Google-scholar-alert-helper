@@ -661,6 +661,9 @@ This project is licensed under the [GNU General Public License v3.0 or later](./
 
 ## Changelog
 
+### 2026-07-03
+- **Fixed**: Missing Perspective and Perspectives section articles in Nature email alert parsing by expanding recognized research subsections.
+
 ### 2026-06-07
 - **Added**: Interactive Reset/Re-authorization button for Server-Side Gmail Authorization in the Web UI.
 - **Added**: Live display showing exactly when the server-side Gmail token was last updated and how many days/hours have elapsed since.
