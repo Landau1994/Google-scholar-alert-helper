@@ -663,6 +663,8 @@ This project is licensed under the [GNU General Public License v3.0 or later](./
 
 ### 2026-07-03
 - **Fixed**: Missing Perspective and Perspectives section articles in Nature email alert parsing by expanding recognized research subsections.
+- **Improved**: Added write-time date validation and normalization in `services/vectorService.ts` to prevent malformed paper dates from entering the database.
+- **Fixed**: Resolved a legacy date format issue in LanceDB that allowed historic papers with human-readable/null dates to bypass the search time filter. Created and executed a database migration script (`scripts/cleanupLegacyDates.ts`) to repair 821 legacy records.
 
 ### 2026-06-07
 - **Added**: Interactive Reset/Re-authorization button for Server-Side Gmail Authorization in the Web UI.

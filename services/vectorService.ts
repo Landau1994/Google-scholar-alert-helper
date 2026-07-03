@@ -158,10 +158,12 @@ export const indexPapers = async (papers: Paper[]) => {
       const embeddings = await generateBatchEmbeddings(textsToEmbed);
       
       batch.forEach((paper, idx) => {
+        const indexedAt = new Date().toISOString();
         vectorPapers.push({
           ...paper,
+          date: normalizeDateString(paper.date, indexedAt),
           vector: embeddings[idx],
-          indexedAt: new Date().toISOString()
+          indexedAt: indexedAt
         });
       });
       
@@ -214,3 +216,93 @@ export const searchPapers = async (query: string | null | undefined, limit: numb
     return results.slice(0, limit);
   }
 };
+
+/**
+ * Normalizes a date string to YYYY-MM-DD.
+ * If the date is invalid or missing, it falls back to the indexedAt date or today's date.
+ */
+export function normalizeDateString(dateStr: string | null | undefined, fallbackISO?: string): string {
+  const fallback = (fallbackISO || new Date().toISOString()).split('T')[0];
+  if (!dateStr || typeof dateStr !== 'string') {
+    return fallback;
+  }
+  
+  const trimmed = dateStr.trim();
+  if (trimmed === '' || trimmed.toLowerCase() === 'not specified' || trimmed.toLowerCase() === 'undefined/null' || trimmed.toLowerCase() === 'null') {
+    return fallback;
+  }
+
+  // If it's already in YYYY-MM-DD format, return it
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Attempt to parse with JavaScript Date
+  try {
+    const parsedDate = new Date(trimmed);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString().split('T')[0];
+    }
+  } catch (e) {
+    // Ignore and try custom patterns
+  }
+
+  // Custom regex pattern matching
+  
+  // Pattern 1: Just a year (e.g., "2024", "2025")
+  if (/^\d{4}$/.test(trimmed)) {
+    return `${trimmed}-01-01`;
+  }
+
+  // Pattern 2: Month Year (e.g., "December 2025")
+  const monthYearMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (monthYearMatch) {
+    const monthStr = monthYearMatch[1].toLowerCase();
+    const yearStr = monthYearMatch[2];
+    const monthMap: Record<string, string> = {
+      jan: '01', janurary: '01', january: '01',
+      feb: '02', february: '02',
+      mar: '03', march: '03',
+      apr: '04', april: '04',
+      may: '05',
+      jun: '06', june: '06',
+      jul: '07', july: '07',
+      aug: '08', august: '08',
+      sep: '09', september: '09', sept: '09',
+      oct: '10', october: '10',
+      nov: '11', november: '11',
+      dec: '12', december: '12'
+    };
+    const prefix = monthStr.substring(0, 3);
+    const monthNum = monthMap[prefix] || '01';
+    return `${yearStr}-${monthNum}-01`;
+  }
+
+  // Pattern 3: DD Month Year (e.g., "13 January 2026", "03 November 2025")
+  const ddMonthYearMatch = trimmed.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (ddMonthYearMatch) {
+    let dayStr = ddMonthYearMatch[1];
+    if (dayStr.length === 1) dayStr = '0' + dayStr;
+    const monthStr = ddMonthYearMatch[2].toLowerCase();
+    const yearStr = ddMonthYearMatch[3];
+    const monthMap: Record<string, string> = {
+      jan: '01', january: '01',
+      feb: '02', february: '02',
+      mar: '03', march: '03',
+      apr: '04', april: '04',
+      may: '05',
+      jun: '06', june: '06',
+      jul: '07', july: '07',
+      aug: '08', august: '08',
+      sep: '09', september: '09',
+      oct: '10', october: '10',
+      nov: '11', november: '11',
+      dec: '12', december: '12'
+    };
+    const prefix = monthStr.substring(0, 3);
+    const monthNum = monthMap[prefix] || '01';
+    return `${yearStr}-${monthNum}-${dayStr}`;
+  }
+
+  return fallback;
+}
