@@ -665,6 +665,7 @@ This project is licensed under the [GNU General Public License v3.0 or later](./
 - **Fixed**: Missing Perspective and Perspectives section articles in Nature email alert parsing by expanding recognized research subsections.
 - **Improved**: Added write-time date validation and normalization in `services/vectorService.ts` to prevent malformed paper dates from entering the database.
 - **Fixed**: Resolved a legacy date format issue in LanceDB that allowed historic papers with human-readable/null dates to bypass the search time filter. Created and executed a database migration script (`scripts/cleanupLegacyDates.ts`) to repair 821 legacy records.
+- **Fixed**: Resolved duplicate paper records in LanceDB by creating and running an intelligent deduplication and metadata-merging script (`scripts/deduplicateDatabase.ts`), which merged 97 redundant records from overlapping email sources while preserving highest-quality fields (longest authors list, full abstract, specific journal name) and combining matched keywords.
 
 ### 2026-06-07
 - **Added**: Interactive Reset/Re-authorization button for Server-Side Gmail Authorization in the Web UI.
