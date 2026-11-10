@@ -3,6 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { Paper, DigestSummary } from "../types.ts";
 import { logger } from "../utils/logger.ts";
 import { extractArticlesFromEmail, type ExtractedArticle } from "./emailArticleExtractor.ts";
+import { GEMINI_FLASH_MODEL } from './geminiModels.ts';
 
 // Note: Proxy is configured in scripts/loadEnv.ts which replaces globalThis.fetch
 // The Google SDK should use the global fetch which is already proxy-aware
@@ -907,7 +908,7 @@ const estimateTokens = (text: string): number => {
 
 /**
  * Maximum input tokens for Gemini models (conservative limits to leave room for response)
- * gemini-3-pro-preview and gemini-3.1-flash-lite: ~1M tokens, but we use 800k to be safe
+ * Gemini Flash supports ~1M tokens, but we use 800k to leave room for the response.
  */
 const MAX_INPUT_TOKENS = 800000;
 
@@ -1309,19 +1310,13 @@ export const processScholarEmails = async (
   };
 
   try {
-    // Try primary model first with retry
     try {
-      const result = await generateWithRetry('gemini-3.1-flash-lite');
+      const result = await generateWithRetry(GEMINI_FLASH_MODEL);
       processResult(result);
       logger.success(`Successfully extracted ${result.papers.length} papers (with source weights + keyword adjustments)`);
       return result;
     } catch (primaryError: any) {
       const parsed = parseGeminiError(primaryError);
-
-      // If auth error, don't bother with fallback
-      if (parsed.type === 'auth') {
-        throw new Error(parsed.message);
-      }
 
       // If token limit error, try chunking
       if (parsed.type === 'token_limit') {
@@ -1329,25 +1324,7 @@ export const processScholarEmails = async (
         return processInChunks(rawEmails, keywords, maxPapers, penaltyKeywords, linkMap, snippetMap);
       }
 
-      logger.warn(`Primary model failed, attempting fallback... ${parsed.message}`);
-
-      // Fallback to pro model with retry
-      try {
-        const result = await generateWithRetry('gemini-3-pro-preview');
-        processResult(result);
-        logger.success(`Successfully extracted ${result.papers.length} papers (fallback, with source weights applied)`);
-        return result;
-      } catch (fallbackError: any) {
-        const fallbackParsed = parseGeminiError(fallbackError);
-
-        // If fallback also hits token limit, try chunking
-        if (fallbackParsed.type === 'token_limit') {
-          logger.warn('Fallback also hit token limit, switching to chunked processing...');
-          return processInChunks(rawEmails, keywords, maxPapers, penaltyKeywords, linkMap, snippetMap);
-        }
-
-        throw new Error(fallbackParsed.message);
-      }
+      throw new Error(parsed.message);
     }
   } catch (error: any) {
     logger.error("Failed to process with Gemini:", error);
@@ -1565,11 +1542,11 @@ ${structuredContent}`;
     try {
       const response = await executeWithRetry(async () => {
         return await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
+          model: GEMINI_FLASH_MODEL,
           contents: prompt,
           config: { responseMimeType: "application/json", responseSchema: simpleSchema }
         });
-      }, 'gemini-3.1-flash-lite', 3);
+      }, GEMINI_FLASH_MODEL, 3);
 
       const jsonStr = response.text;
       if (!jsonStr) throw new Error("Empty response");
@@ -1763,14 +1740,14 @@ ${chunk.content}`;
 
     const response = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
+        model: GEMINI_FLASH_MODEL,
         contents: prompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: simpleSchema
         }
       });
-    }, 'gemini-3.1-flash-lite', 3);
+    }, GEMINI_FLASH_MODEL, 3);
 
     const result = JSON.parse(response.text || '{"papers":[]}');
 
@@ -1968,11 +1945,11 @@ ${structuredContent}`;
   try {
     const response = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
+        model: GEMINI_FLASH_MODEL,
         contents: prompt,
         config: { responseMimeType: "application/json", responseSchema: simpleSchema }
       });
-    }, 'gemini-3.1-flash-lite', 3);
+    }, GEMINI_FLASH_MODEL, 3);
 
     const jsonStr = response.text;
     if (!jsonStr) throw new Error("Empty response");
@@ -2248,10 +2225,10 @@ const generateLiteratureReviewSingleShot = async (
   try {
     const response = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: GEMINI_FLASH_MODEL,
         contents: prompt
       });
-    }, 'gemini-3-pro-preview', 5); // Increased retries for long-running review generation
+    }, GEMINI_FLASH_MODEL, 5); // Increased retries for long-running review generation
     return response.text || "Failed to generate report.";
   } catch (error) {
     logger.error("Failed to generate literature review (single-shot):", error);
@@ -2292,10 +2269,10 @@ Write the review now:`;
   try {
     const response = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
+        model: GEMINI_FLASH_MODEL,
         contents: prompt
       });
-    }, 'gemini-3.1-flash-lite', 5);
+    }, GEMINI_FLASH_MODEL, 5);
 
     logger.info(`[Lightweight] Review generated successfully`);
     return response.text || "Failed to generate report.";
@@ -2348,11 +2325,11 @@ const generateLiteratureReviewSegmented = async (
 
     const outlineResponse = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite', // Use Flash for structure/routing (faster, larger context)
+        model: GEMINI_FLASH_MODEL, // Use Flash for structure/routing (faster, larger context)
         contents: outlinePrompt,
         config: { responseMimeType: "application/json" }
       });
-    }, 'gemini-3.1-flash-lite', 5); // Increased retries for reliability
+    }, GEMINI_FLASH_MODEL, 5); // Increased retries for reliability
 
     const outline = JSON.parse(outlineResponse.text || "{}");
     if (!outline.themes) throw new Error("Failed to generate outline themes.");
@@ -2402,10 +2379,10 @@ const generateLiteratureReviewSegmented = async (
       try {
         const response = await executeWithRetry(async () => {
           return await ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
+            model: GEMINI_FLASH_MODEL,
             contents: sectionPrompt
           });
-        }, 'gemini-3-pro-preview', 5); // Increased retries for section generation
+        }, GEMINI_FLASH_MODEL, 5); // Increased retries for section generation
 
         return { title: themeTitle, content: response.text };
       } catch (e) {
@@ -2455,10 +2432,10 @@ const generateLiteratureReviewSegmented = async (
 
     const conclusionResponse = await executeWithRetry(async () => {
       return await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: GEMINI_FLASH_MODEL,
         contents: conclusionPrompt
       });
-    }, 'gemini-3-pro-preview', 5); // Increased retries for conclusion generation
+    }, GEMINI_FLASH_MODEL, 5); // Increased retries for conclusion generation
 
     fullReport += `${conclusionResponse.text}\n\n`;
 

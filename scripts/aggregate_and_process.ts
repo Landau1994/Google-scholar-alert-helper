@@ -2,6 +2,7 @@ import './loadEnv.ts';
 import fs from 'fs';
 import path from 'path';
 import { generateLiteratureReview } from '../services/geminiService.ts';
+import { GEMINI_FLASH_MODEL } from '../services/geminiModels.ts';
 import { indexPapers } from '../services/vectorService.ts';
 import type { Paper } from '../types.ts';
 import { setGlobalDispatcher, ProxyAgent } from 'undici';
@@ -173,7 +174,7 @@ async function main() {
         }
 
         console.log("🚀 Starting Literature Review generation (Plan & Parallel)...");
-        console.log("Using 'gemini-3.1-flash-lite' for planning and 'gemini-3-pro-preview' for writing.");
+        console.log(`Using ${GEMINI_FLASH_MODEL} for planning and writing.`);
         try {
             // Pass filtered papers (already filtered by minScore)
             const review = await generateLiteratureReview(filteredPapers, topKeywords);

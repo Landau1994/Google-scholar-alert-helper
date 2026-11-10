@@ -26,9 +26,12 @@ Details, can be seen in [ACADEMIC_REPORT](./ACADEMIC_REPORT.md)
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set the `VITE_GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+Text extraction, scoring, and literature reviews use [`gemini-3.8-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash), configured in `services/geminiModels.ts`.
+After changing the model or scheduler code, reload both PM2 processes with `pm2 restart scholarpulse scholarpulse-scheduler`. If you also change shell environment variables, add `--update-env`.
 
 ## Storage & Directories
 
@@ -145,6 +148,8 @@ The scheduler includes automatic validation to detect AI hallucinations (papers 
 3. Papers not found in the original emails are flagged as potential hallucinations
 4. A refined analysis file is generated with hallucinated papers removed
 5. The initial extraction file is automatically deleted, leaving only the refined version
+
+During normalization, inline highlighting tags such as `<b>`, `<span>`, and `<strong>` are removed without adding spaces inside words. For example, Google Scholar's `Single-<b>cell </b>and` correctly matches `Single-cell and`. Block elements still retain text separators.
 
 **Validation output:**
 ```
@@ -618,6 +623,14 @@ If article extraction fails for any email, the system automatically falls back t
 
 ## Testing & Debugging Scripts
 
+### Test Paper Title Validation
+
+Run the offline regression checks for highlighted titles, HTML entities, block boundaries, and unrelated titles:
+
+```bash
+npx tsx scripts/validatePaperTitles.test.ts
+```
+
 ### Test API Connection
 
 Test basic Gemini API connectivity:
@@ -660,6 +673,12 @@ The app exposes these internal API endpoints (available when running `npm run de
 This project is licensed under the [GNU General Public License v3.0 or later](./LICENSE).
 
 ## Changelog
+
+### 2026-11-10
+- **Changed**: Centralized text model selection in `services/geminiModels.ts` and switched extraction, scoring, review generation, and diagnostic scripts to Gemini 3.8 Flash.
+- **Fixed**: Prevented Google Scholar's inline HTML highlighting from splitting title words during validation and incorrectly removing real papers.
+- **Added**: Offline regression checks for title validation and scheduler startup logging of the active text model.
+- **Documented**: Corrected the API key environment variable to `VITE_GEMINI_API_KEY` and documented PM2 reload instructions.
 
 ### 2026-07-03
 - **Fixed**: Missing Perspective and Perspectives section articles in Nature email alert parsing by expanding recognized research subsections.

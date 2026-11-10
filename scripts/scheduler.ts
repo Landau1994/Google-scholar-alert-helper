@@ -8,6 +8,7 @@ import { syncGmailEmails } from './syncGmail.ts';
 import { validateExtraction, refineAndSave } from './validatePaperTitles.ts';
 import { extractArticlesFromEmail } from '../services/emailArticleExtractor.ts';
 import { indexPapers } from '../services/vectorService.ts';
+import { GEMINI_FLASH_MODEL } from '../services/geminiModels.ts';
 
 if (!process.env.VITE_GEMINI_API_KEY) {
   console.error("[Scheduler] No API Key found in .env.local");
@@ -990,6 +991,7 @@ const config = loadConfig();
 const CRON_SCHEDULE = timeToCron(config.time);
 
 console.log(`[Scheduler] Starting ScholarPulse Daily Report Scheduler`);
+console.log(`[Scheduler] Text model: ${GEMINI_FLASH_MODEL}`);
 console.log(`[Scheduler] Enabled: ${config.enabled}`);
 console.log(`[Scheduler] Schedule: Every day at ${config.time} (${CRON_SCHEDULE})`);
 console.log(`[Scheduler] Timezone: ${config.timezone}`);

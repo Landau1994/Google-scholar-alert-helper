@@ -75,7 +75,9 @@ function normalizeText(text: string): string {
     .replace(/[""'']/g, '"')
     .replace(/[–—]/g, '-')
     .replace(/…/g, '...')
-    // Remove HTML tags
+    // Inline highlighting must not split words: Single-<b>cell</b> is Single-cell.
+    .replace(/<\/?(?:b|strong|em|i|span|mark|u|font)\b[^>]*>/gi, '')
+    // Keep separators between block elements and other HTML tags.
     .replace(/<[^>]+>/g, ' ')
     // Normalize whitespace
     .replace(/\s+/g, ' ')
@@ -109,7 +111,7 @@ function extractSignificantWords(title: string): string[] {
  * Check if a title exists in the email content.
  * Returns match type: exact, normalized, partial, or not_found.
  */
-function checkTitleInContent(title: string, content: string): { found: boolean; matchType: ValidationResult['matchType']; details?: string } {
+export function checkTitleInContent(title: string, content: string): { found: boolean; matchType: ValidationResult['matchType']; details?: string } {
   // Skip very short or invalid titles
   if (!title || title.length < 10) {
     return { found: false, matchType: 'not_found', details: 'Title too short or invalid' };

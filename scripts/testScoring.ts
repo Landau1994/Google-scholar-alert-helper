@@ -21,6 +21,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
 import { calculateKeywordBonus, getSourceMultiplier } from '../services/geminiService.ts';
+import { GEMINI_FLASH_MODEL } from '../services/geminiModels.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -69,7 +70,7 @@ Return JSON with:
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite',
+      model: GEMINI_FLASH_MODEL,
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
