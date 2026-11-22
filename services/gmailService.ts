@@ -1,6 +1,7 @@
 
 import { RawEmail } from "../types";
 import { logger } from "../utils/logger";
+import { buildGmailAlertQuery } from "./emailSources";
 
 // Add global declarations for Google API client libraries
 declare var gapi: any;
@@ -172,10 +173,10 @@ export class GmailService {
     // Calculate timestamp for "hours ago" in seconds
     const timestamp = Math.floor((Date.now() - hours * 60 * 60 * 1000) / 1000);
 
-    // Search for Google Scholar alerts and OpenRxiv alerts
+    // Search for academic alert emails (shared canonical list)
     const response = await gapi.client.gmail.users.messages.list({
       userId: 'me',
-      q: `{from:scholaralerts-noreply@google.com from:openRxiv-mailer@alerts.highwire.org from:cellpress@notification.elsevier.com from:ealert@nature.com from:ahajournals@ealerts.heart.org from:alerts@nature.com} after:${timestamp}`,
+      q: buildGmailAlertQuery(timestamp),
       maxResults: limit
     });
 

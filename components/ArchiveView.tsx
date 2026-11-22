@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { Search, Loader2, ExternalLink, Calendar, User, BookOpen, Download, Filter, FileText, Check } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Search, Loader2, ExternalLink, Calendar, User, BookOpen, Download, Filter, FileText, Check, ArrowUpDown } from 'lucide-react';
 import { Paper } from '../types';
 
 interface SearchResult extends Paper {
@@ -8,6 +8,37 @@ interface SearchResult extends Paper {
 }
 
 type TimeFilter = 'all' | '7' | '30' | '90' | '365';
+type SortMode = 'relevance' | 'newest';
+
+const escapeBibtex = (val: string) =>
+  (val || '').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
+
+const formatBibtex = (papers: SearchResult[]): string => {
+  return papers
+    .map((paper, index) => {
+      const firstAuthor = (paper.authors?.[0] || 'unknown')
+        .split(/[\s,]+/)[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '') || 'paper';
+      const year = (paper.date || '').match(/^\d{4}/)?.[0] || String(new Date().getFullYear());
+      const citeKey = `${firstAuthor}${year}_${index + 1}`;
+      const doiMatch = (paper.link || '').match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/);
+
+      const lines = [
+        `@article{${citeKey},`,
+        `  title = {${escapeBibtex(paper.title)}},`,
+        `  author = {${escapeBibtex((paper.authors || []).join(' and ') || 'Unknown')}},`,
+        `  journal = {${escapeBibtex(paper.source || 'Unknown')}},`,
+        `  year = {${year}},`,
+      ];
+      if (doiMatch) lines.push(`  doi = {${doiMatch[0]}},`);
+      if (paper.link) lines.push(`  url = {${paper.link}},`);
+      if (paper.snippet) lines.push(`  abstract = {${escapeBibtex(paper.snippet)}},`);
+      lines.push('}');
+      return lines.join('\n');
+    })
+    .join('\n\n');
+};
 
 const ArchiveView: React.FC = () => {
   const [query, setQuery] = useState('');
@@ -20,6 +51,15 @@ const ArchiveView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isExported, setIsExported] = useState(false);
+  const [isBibExported, setIsBibExported] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>('relevance');
+
+  const displayedResults = useMemo(() => {
+    if (sortMode === 'newest') {
+      return [...results].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    }
+    return results;
+  }, [results, sortMode]);
 
   const handleSearch = async (e?: React.FormEvent, overrideDays?: TimeFilter) => {
     if (e) e.preventDefault();
@@ -64,8 +104,30 @@ const ArchiveView: React.FC = () => {
     }
   };
 
+  const handleExportBibtex = () => {
+    if (displayedResults.length === 0) return;
+    try {
+      const bibtex = formatBibtex(displayedResults);
+      const blob = new Blob([bibtex], { type: 'application/x-bibtex;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const slug = (query || journal || 'archive').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      a.download = `scholarpulse-${slug}-${new Date().toISOString().split('T')[0]}.bib`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setIsBibExported(true);
+      setTimeout(() => setIsBibExported(false), 2000);
+    } catch (err) {
+      console.error('BibTeX export failed', err);
+      alert('Failed to export BibTeX.');
+    }
+  };
+
   const handleExport = () => {
-    if (results.length === 0) return;
+    if (displayedResults.length === 0) return;
     
     setIsExporting(true);
     try {
@@ -192,24 +254,51 @@ const ArchiveView: React.FC = () => {
               </div>
             </div>
 
-            {results.length > 0 && (
-              <button
-                onClick={handleExport}
-                disabled={isExporting}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
-              >
-                {isExported ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    Exported!
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    Export Markdown ({results.length})
-                  </>
-                )}
-              </button>
+            {displayedResults.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setSortMode(m => (m === 'relevance' ? 'newest' : 'relevance'))}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all"
+                  title="Toggle result ordering"
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  {sortMode === 'relevance' ? 'Sort: Semantic' : 'Sort: Newest'}
+                </button>
+                <button
+                  onClick={handleExportBibtex}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all active:scale-95"
+                  title="Download BibTeX for Zotero / EndNote / LaTeX"
+                >
+                  {isBibExported ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-500" />
+                      BibTeX Saved!
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-4 h-4" />
+                      BibTeX ({displayedResults.length})
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleExport}
+                  disabled={isExporting}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {isExported ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      Exported!
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Markdown ({displayedResults.length})
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -243,7 +332,7 @@ const ArchiveView: React.FC = () => {
               </p>
             </div>
           ) : (
-            results.map((paper) => (
+            displayedResults.map((paper) => (
               <div key={paper.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group border-l-4 border-l-transparent hover:border-l-blue-500">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">

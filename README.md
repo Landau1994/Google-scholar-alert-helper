@@ -674,6 +674,16 @@ This project is licensed under the [GNU General Public License v3.0 or later](./
 
 ## Changelog
 
+### 2026-11-22
+- **Fixed**: Removed the 10,000-row deduplication limit in `services/vectorService.ts` and ran `scripts/deduplicateDatabase.ts`, merging 2,140 duplicate groups and removing 3,021 redundant records from LanceDB (22,602 → 19,581 unique papers).
+- **Fixed**: Hardened internal API routes in `vite.config.ts` (`/api/save-emails`, `/api/load-report`, `/api/load-scheduled-report`, `/api/validate-refine`) against path traversal, escaped `/oauth2callback` error HTML against XSS, and added OAuth2 CSRF `state` verification.
+- **Fixed**: Added missing `etoc@oup.com` (European Heart Journal) and `blood@hematology.org` (Blood) senders to a shared `services/emailSources.ts` Gmail query builder used by both `syncGmail.ts` and `gmailService.ts`.
+- **Fixed**: Prevented browser `localStorage` settings in `App.tsx` from overwriting server-side `scheduler.config.json` on initial page load, and added missing `'validating'` progress state handling.
+- **Improved**: Excluded 3072-dim `vector` columns from LanceDB search and `/api/theme-insights` projections (saving megabytes per request), removed the 5,000-row cap on Theme Insights, and replaced hardcoded `"rising"` badges with real 30-day vs prior-30-day growth trends.
+- **Improved**: Migrated `services/vectorService.ts` embeddings from legacy `@google/generative-ai` to `@google/genai` (centralized in `services/geminiModels.ts`).
+- **Improved**: Upgraded `scripts/scheduler.ts` with true IANA timezone handling (`Intl.DateTimeFormat`), automatic `scheduler.config.json` hot-reload (no manual PM2 restart required), and removed ~320 lines of legacy dead code.
+- **Added**: Zero-dependency XSS-safe `MarkdownRenderer` for `ScheduledReports` and `ThemesView` (with raw/formatted toggle), BibTeX export and sort toggle in `ArchiveView`, search/pagination for `Sidebar` history and `ScheduledReports`, local `public/favicon.svg`, `React.lazy` view code-splitting, and core unit tests (`npm test`, `npm run typecheck`).
+
 ### 2026-11-10
 - **Changed**: Centralized text model selection in `services/geminiModels.ts` and switched extraction, scoring, review generation, and diagnostic scripts to Gemini 3.8 Flash.
 - **Fixed**: Prevented Google Scholar's inline HTML highlighting from splitting title words during validation and incorrectly removing real papers.

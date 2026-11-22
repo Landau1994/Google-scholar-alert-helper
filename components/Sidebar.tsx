@@ -1,7 +1,6 @@
-
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { ViewState, HistoryItem } from '../types';
-import { LayoutDashboard, PlusCircle, Bookmark, Settings, BookOpen, Clock, CalendarClock } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, Bookmark, Settings, BookOpen, Clock, CalendarClock, Search } from 'lucide-react';
 
 interface SidebarProps {
   currentView: ViewState;
@@ -14,7 +13,12 @@ interface SidebarProps {
   onLoadReport?: (filename: string) => void;
 }
 
+const HISTORY_PAGE_SIZE = 15;
+
 const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, stats, history = [], onLoadReport }) => {
+  const [historyFilter, setHistoryFilter] = useState('');
+  const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE_SIZE);
+
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
     { id: 'import', icon: PlusCircle, label: 'Add Alerts' },
@@ -24,6 +28,19 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, stats, history 
     { id: 'keywords', icon: Bookmark, label: 'My Keywords' },
     { id: 'settings', icon: Settings, label: 'Settings' },
   ];
+
+  const filteredHistory = useMemo(() => {
+    const q = historyFilter.trim().toLowerCase();
+    if (!q) return history;
+    return history.filter(item =>
+      item.date.toLowerCase().includes(q) || item.filename.toLowerCase().includes(q)
+    );
+  }, [history, historyFilter]);
+
+  const visibleHistory = useMemo(
+    () => filteredHistory.slice(0, historyLimit),
+    [filteredHistory, historyLimit]
+  );
 
   const percentage = stats ? Math.min(100, Math.round((stats.analyzedCount / stats.weeklyGoal) * 100)) : 0;
 
@@ -48,8 +65,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, stats, history 
               key={item.id}
               onClick={() => setView(item.id as ViewState)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                isActive 
-                  ? 'bg-blue-600 text-white shadow-md' 
+                isActive
+                  ? 'bg-blue-600 text-white shadow-md'
                   : 'hover:bg-slate-800 hover:text-white'
               }`}
             >
@@ -62,12 +79,31 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, stats, history 
 
       {history && history.length > 0 && (
         <div className="px-4 py-4 flex-1 overflow-hidden flex flex-col">
-          <p className="px-4 text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wider flex items-center gap-2">
-            <Clock className="w-3 h-3" />
-            History
-          </p>
+          <div className="px-4 flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+              <Clock className="w-3 h-3" />
+              History ({history.length})
+            </p>
+          </div>
+          {history.length > HISTORY_PAGE_SIZE && (
+            <div className="px-2 mb-2">
+              <div className="relative">
+                <Search className="w-3 h-3 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={historyFilter}
+                  onChange={(e) => {
+                    setHistoryFilter(e.target.value);
+                    setHistoryLimit(HISTORY_PAGE_SIZE);
+                  }}
+                  placeholder="Filter history..."
+                  className="w-full pl-7 pr-2 py-1 bg-slate-800/80 border border-slate-700/70 rounded-lg text-[11px] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto space-y-1 pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-            {history.map((item) => (
+            {visibleHistory.map((item) => (
               <button
                 key={item.filename}
                 onClick={() => onLoadReport?.(item.filename)}
@@ -81,6 +117,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, stats, history 
                 </div>
               </button>
             ))}
+            {historyLimit < filteredHistory.length && (
+              <button
+                onClick={() => setHistoryLimit(l => l + HISTORY_PAGE_SIZE)}
+                className="w-full text-center py-1.5 mt-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                Show more ({filteredHistory.length - historyLimit} left)
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -93,8 +137,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, stats, history 
               <span className="text-sm text-white font-medium">{stats.analyzedCount} Papers Analyzed</span>
             </div>
             <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
-              <div 
-                className="bg-blue-500 h-full transition-all duration-500" 
+              <div
+                className="bg-blue-500 h-full transition-all duration-500"
                 style={{ width: `${percentage}%` }}
               />
             </div>

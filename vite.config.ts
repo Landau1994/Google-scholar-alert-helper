@@ -1,9 +1,33 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ProxyAgent, fetch as undiciFetch, setGlobalDispatcher } from 'undici';
+import { resolveSafeFilePath, escapeHtml } from './utils/security.ts';
+
+// Track short-lived OAuth2 CSRF state tokens (10 min TTL)
+const oauthStates = new Map<string, number>();
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+function createOAuthState(): string {
+  const now = Date.now();
+  for (const [key, expiresAt] of oauthStates.entries()) {
+    if (expiresAt < now) oauthStates.delete(key);
+  }
+  const state = crypto.randomBytes(24).toString('hex');
+  oauthStates.set(state, now + OAUTH_STATE_TTL_MS);
+  return state;
+}
+
+function consumeOAuthState(state: string | null): boolean {
+  if (!state) return false;
+  const expiresAt = oauthStates.get(state);
+  if (!expiresAt) return false;
+  oauthStates.delete(state);
+  return expiresAt >= Date.now();
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,7 +56,7 @@ if (proxyUrl) {
   console.log(`[Vite] Using proxy: ${proxyUrl}`);
   if (proxyAgent) {
     setGlobalDispatcher(proxyAgent);
-    // Replace global fetch to ensure all libraries (like @google/generative-ai) use the proxy
+    // Replace global fetch to ensure all libraries (like @google/genai) use the proxy
     (globalThis as any).fetch = (url: string, options: any) => undiciFetch(url, { ...options, dispatcher: proxyAgent });
   }
 }
@@ -70,13 +94,20 @@ export default defineConfig({
               try {
                 const { filename, content } = JSON.parse(body);
                 const dir = path.resolve(__dirname, 'synced_emails');
-                
-                // Ensure directory exists
-                if (!fs.existsSync(dir)) {
-                  fs.mkdirSync(dir);
+                const safePath = resolveSafeFilePath(dir, filename);
+
+                if (!safePath || !filename.endsWith('.json')) {
+                  res.statusCode = 400;
+                  res.end(JSON.stringify({ status: 'error', message: 'Invalid filename' }));
+                  return;
                 }
 
-                fs.writeFileSync(path.join(dir, filename), content);
+                // Ensure directory exists
+                if (!fs.existsSync(dir)) {
+                  fs.mkdirSync(dir, { recursive: true });
+                }
+
+                fs.writeFileSync(safePath, content);
                 
                 res.statusCode = 200;
                 res.end(JSON.stringify({ status: 'success' }));
@@ -129,7 +160,12 @@ export default defineConfig({
                 return;
               }
 
-              const filePath = path.resolve(__dirname, 'synced_emails', filename);
+              const filePath = resolveSafeFilePath(path.resolve(__dirname, 'synced_emails'), filename);
+              if (!filePath) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ status: 'error', message: 'Invalid filename' }));
+                return;
+              }
               if (!fs.existsSync(filePath)) {
                 res.statusCode = 404;
                 res.end(JSON.stringify({ status: 'error', message: 'File not found' }));
@@ -195,7 +231,12 @@ export default defineConfig({
                 return;
               }
 
-              const filePath = path.resolve(__dirname, 'reports', filename);
+              const filePath = resolveSafeFilePath(path.resolve(__dirname, 'reports'), filename);
+              if (!filePath) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ status: 'error', message: 'Invalid filename' }));
+                return;
+              }
               if (!fs.existsSync(filePath)) {
                 res.statusCode = 404;
                 res.end(JSON.stringify({ status: 'error', message: 'File not found' }));
@@ -353,6 +394,7 @@ export default defineConfig({
               const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
               const redirectUri = config.redirect_uri || `http://${req.headers.host}/oauth2callback`;
 
+              const state = createOAuthState();
               const params = new URLSearchParams({
                 client_id: config.client_id,
                 redirect_uri: redirectUri,
@@ -360,6 +402,7 @@ export default defineConfig({
                 scope: 'https://www.googleapis.com/auth/gmail.readonly',
                 access_type: 'offline',
                 prompt: 'consent',
+                state,
               });
 
               const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
@@ -430,11 +473,18 @@ export default defineConfig({
                 // Dynamic import the validation module
                 const { validateAndRefine } = await import('./scripts/validatePaperTitles.ts');
 
-                const syncPath = syncFile ? path.resolve(__dirname, 'synced_emails', syncFile) : undefined;
-                const analysisPath = analysisFile ? path.resolve(__dirname, 'synced_emails', analysisFile) : undefined;
+                const syncedDir = path.resolve(__dirname, 'synced_emails');
+                const syncPath = syncFile ? resolveSafeFilePath(syncedDir, syncFile) : undefined;
+                const analysisPath = analysisFile ? resolveSafeFilePath(syncedDir, analysisFile) : undefined;
+
+                if ((syncFile && !syncPath) || (analysisFile && !analysisPath)) {
+                  res.statusCode = 400;
+                  res.end(JSON.stringify({ status: 'error', message: 'Invalid syncFile or analysisFile' }));
+                  return;
+                }
 
                 console.log('[API] Running validate-refine...');
-                const result = await validateAndRefine(syncPath, analysisPath);
+                const result = await validateAndRefine(syncPath || undefined, analysisPath || undefined);
 
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({
@@ -500,13 +550,27 @@ export default defineConfig({
             const urlObj = new URL(url, `http://${req.headers.host}`);
             const code = urlObj.searchParams.get('code');
             const errorParam = urlObj.searchParams.get('error');
+            const stateParam = urlObj.searchParams.get('state');
 
             if (errorParam) {
               res.setHeader('Content-Type', 'text/html');
               res.end(`
                 <html><body style="font-family: sans-serif; padding: 40px; text-align: center;">
                   <h1 style="color: #dc2626;">Authorization Failed</h1>
-                  <p>Error: ${errorParam}</p>
+                  <p>Error: ${escapeHtml(errorParam)}</p>
+                  <p><a href="/">Return to app</a></p>
+                </body></html>
+              `);
+              return;
+            }
+
+            if (!consumeOAuthState(stateParam)) {
+              res.statusCode = 403;
+              res.setHeader('Content-Type', 'text/html');
+              res.end(`
+                <html><body style="font-family: sans-serif; padding: 40px; text-align: center;">
+                  <h1 style="color: #dc2626;">Invalid or Expired OAuth State</h1>
+                  <p>Please restart authorization from Settings.</p>
                   <p><a href="/">Return to app</a></p>
                 </body></html>
               `);
@@ -556,7 +620,7 @@ export default defineConfig({
                   res.end(`
                     <html><body style="font-family: sans-serif; padding: 40px; text-align: center;">
                       <h1 style="color: #dc2626;">Token Exchange Failed</h1>
-                      <p>${errText}</p>
+                      <p>${escapeHtml(errText)}</p>
                       <p><a href="/">Return to app</a></p>
                     </body></html>
                   `);
@@ -593,7 +657,7 @@ export default defineConfig({
                 res.end(`
                   <html><body style="font-family: sans-serif; padding: 40px; text-align: center;">
                     <h1 style="color: #dc2626;">Error</h1>
-                    <p>${(error as Error).message}</p>
+                    <p>${escapeHtml((error as Error).message)}</p>
                     <p><a href="/">Return to app</a></p>
                   </body></html>
                 `);
@@ -675,23 +739,36 @@ export default defineConfig({
 
               const db = await lancedb.connect(VECTOR_DB_PATH);
               const table = await db.openTable("papers");
-              
-              // Get a larger sample for better clustering
-              const papers = await table.query().limit(5000).toArray();
+
+              // Query ALL papers without loading 3072-dim vectors (fast & low memory)
+              const papers = await table.query().select(["id", "title", "matchedKeywords", "date"]).toArray();
               const validPapers = papers.filter(p => p.id !== "schema-definition");
 
               console.log(`[API] Analyzing ${validPapers.length} papers for themes...`);
 
-              // Simple keyword-based clustering
-              const clusterMap = new Map();
+              const nowMs = Date.now();
+              const dayMs = 24 * 60 * 60 * 1000;
+              const cutoff30 = new Date(nowMs - 30 * dayMs).toISOString().split('T')[0];
+              const cutoff60 = new Date(nowMs - 60 * dayMs).toISOString().split('T')[0];
+
+              // Keyword-based clustering with real 30-day growth calculation
+              const clusterMap = new Map<string, { name: string; papers: any[]; recent30: number; prev30: number }>();
               validPapers.forEach(p => {
-                // Handle both Array and Arrow Vector
                 const kws = Array.isArray(p.matchedKeywords) ? p.matchedKeywords : Array.from(p.matchedKeywords || []);
-                kws.forEach(kw => {
-                  if (!clusterMap.has(kw)) {
-                    clusterMap.set(kw, { name: kw, papers: [] });
+                const dateStr = String(p.date || '');
+                const isRecent30 = dateStr >= cutoff30;
+                const isPrev30 = dateStr >= cutoff60 && dateStr < cutoff30;
+
+                kws.forEach((kw: string) => {
+                  const trimmed = String(kw || '').trim();
+                  if (!trimmed) return;
+                  if (!clusterMap.has(trimmed)) {
+                    clusterMap.set(trimmed, { name: trimmed, papers: [], recent30: 0, prev30: 0 });
                   }
-                  clusterMap.get(kw).papers.push(p);
+                  const entry = clusterMap.get(trimmed)!;
+                  entry.papers.push(p);
+                  if (isRecent30) entry.recent30++;
+                  else if (isPrev30) entry.prev30++;
                 });
               });
 
@@ -699,15 +776,26 @@ export default defineConfig({
 
               const themes = Array.from(clusterMap.values())
                 .sort((a, b) => b.papers.length - a.papers.length)
-                .slice(0, 12) // Show more themes
-                .map((c, idx) => ({
-                  id: String(idx + 1),
-                  name: c.name,
-                  summary: `Cluster of ${c.papers.length} papers centered on ${c.name}. Recent focus includes ${c.papers[0]?.title.substring(0, 60)}...`,
-                  paperCount: c.papers.length,
-                  keyPapers: c.papers.slice(0, 3).map(p => p.title),
-                  growth: idx < 4 ? 'rising' : 'stable'
-                }));
+                .slice(0, 12)
+                .map((c, idx) => {
+                  // Sort newest papers first for representative titles
+                  c.papers.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+                  let growth: 'rising' | 'stable' | 'fading' = 'stable';
+                  if ((c.prev30 > 0 && c.recent30 >= c.prev30 * 1.25 && c.recent30 >= 2) || (c.prev30 === 0 && c.recent30 >= 3)) {
+                    growth = 'rising';
+                  } else if (c.prev30 >= 3 && c.recent30 < c.prev30 * 0.6) {
+                    growth = 'fading';
+                  }
+
+                  return {
+                    id: String(idx + 1),
+                    name: c.name,
+                    summary: `Cluster of ${c.papers.length} papers (${c.recent30} in last 30d vs ${c.prev30} prior 30d) centered on ${c.name}. Recent highlight: ${c.papers[0]?.title.substring(0, 60)}...`,
+                    paperCount: c.papers.length,
+                    keyPapers: c.papers.slice(0, 3).map(p => p.title),
+                    growth
+                  };
+                });
 
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({

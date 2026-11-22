@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Sparkles, TrendingUp, BookOpen, ChevronRight, Layers, X, ExternalLink, User, Calendar, FileText, Copy, Check } from 'lucide-react';
+import { Loader2, Sparkles, TrendingUp, TrendingDown, BookOpen, ChevronRight, Layers, X, ExternalLink, User, Calendar, FileText, Copy, Check } from 'lucide-react';
 import { Paper } from '../types';
 import { generateLiteratureReview } from '../services/geminiService';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface Theme {
   id: string;
@@ -292,6 +293,12 @@ const ThemesView: React.FC = () => {
                         Rising
                       </span>
                     )}
+                    {theme.growth === 'fading' && (
+                      <span className="shrink-0 flex items-center gap-1 px-2 py-1 bg-amber-50 text-amber-700 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-amber-100">
+                        <TrendingDown className="w-3 h-3" />
+                        Cooling
+                      </span>
+                    )}
                   </div>
                   
                   <p className="text-sm text-slate-600 mb-6 flex-1 italic leading-relaxed">
@@ -380,11 +387,8 @@ const ThemesView: React.FC = () => {
                   >
                     {isCopied ? <><Check className="w-4 h-4 text-emerald-600" /> Copied</> : <><Copy className="w-4 h-4" /> Copy</>}
                   </button>
-                  <div className="prose prose-sm prose-blue max-w-none prose-headings:font-bold prose-a:text-blue-600">
-                    {/* Render basic markdown since we might not have react-markdown installed. Using a simple split for now or just pre-wrap */}
-                    <div className="whitespace-pre-wrap font-sans text-slate-700 leading-relaxed">
-                      {generatedSummary}
-                    </div>
+                  <div className="pr-24">
+                    <MarkdownRenderer content={generatedSummary} />
                   </div>
                   <div className="mt-8 pt-4 border-t border-slate-100">
                     <button 

@@ -208,7 +208,9 @@ async function main() {
   console.log(`   - Output records for database: ${deduplicatedRecords.length}`);
   
   console.log("\n💾 Saving deduplicated and merged records back to LanceDB...");
-  await db.createTable("papers", deduplicatedRecords, { mode: "overwrite" });
+  const newTable = await db.createTable("papers", deduplicatedRecords, { mode: "overwrite" });
+  console.log("🧹 Compacting and pruning superseded LanceDB versions...");
+  await newTable.optimize({ cleanupOlderThan: new Date() });
   console.log("🎉 Successfully deduplicated and optimized your vector database!");
 }
 

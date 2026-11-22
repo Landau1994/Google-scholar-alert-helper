@@ -2,6 +2,7 @@ import './loadEnv.ts';
 import fs from 'fs';
 import path from 'path';
 import { OAuth2TokenManager, loadOAuth2Config } from './oauth2TokenManager.ts';
+import { buildGmailAlertQuery } from '../services/emailSources.ts';
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1';
 const syncedEmailsDir = path.resolve(process.cwd(), 'synced_emails');
@@ -59,10 +60,8 @@ async function fetchWithRetry(url: string, init: RequestInit, retries = 3, backo
 async function fetchGmailEmails(accessToken: string, hours: number, limit: number): Promise<RawEmail[]> {
   const timestamp = Math.floor((Date.now() - hours * 60 * 60 * 1000) / 1000);
 
-  // Search query for academic alert emails
-  const query = encodeURIComponent(
-    `{from:scholaralerts-noreply@google.com from:openRxiv-mailer@alerts.highwire.org from:cellpress@notification.elsevier.com from:ealert@nature.com from:ahajournals@ealerts.heart.org from:alerts@nature.com} after:${timestamp}`
-  );
+  // Search query for academic alert emails (shared canonical list)
+  const query = encodeURIComponent(buildGmailAlertQuery(timestamp));
 
   console.log(`[GmailSync] Fetching emails from the last ${hours} hours...`);
 

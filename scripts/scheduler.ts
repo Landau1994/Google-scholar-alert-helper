@@ -76,328 +76,52 @@ function timeToCron(time: string): string {
   return `${minutes} ${hours} * * *`;
 }
 
-// Delay helper for batch processing
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Timezone-aware date formatting and midnight calculation using Intl.DateTimeFormat
+function getTimezoneDateInfo(date: Date, timeZone: string) {
+  const safeTimeZone = timeZone || 'Asia/Shanghai';
+  const getParts = (d: Date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: safeTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(d);
+    const map = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    return {
+      year: map.year,
+      month: map.month,
+      day: map.day,
+      hour: map.hour,
+      minute: map.minute,
+      second: map.second,
+    };
+  };
 
-// ============ Smart Paper Extraction ============
+  const p = getParts(date);
+  const dateStr = `${p.year}-${p.month}-${p.day}`;
+  const timestamp = `${dateStr}T${p.hour}-${p.minute}-${p.second}`;
+  const display = `${dateStr} ${p.hour}:${p.minute}:${p.second}`;
 
-interface ExtractedPaperBlock {
-  emailId: string;
-  emailFrom: string;
-  emailSubject: string;
-  paperHtml: string;  // The HTML/text block for this paper
-  estimatedTitle: string;  // For logging/debugging
+  // Calculate UTC epoch ms corresponding to 00:00:00 of `dateStr` in `safeTimeZone`
+  const utcMidnightGuess = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), 0, 0, 0);
+  const guessParts = getParts(new Date(utcMidnightGuess));
+  const tzAsUtc = Date.UTC(
+    Number(guessParts.year),
+    Number(guessParts.month) - 1,
+    Number(guessParts.day),
+    Number(guessParts.hour),
+    Number(guessParts.minute),
+    Number(guessParts.second)
+  );
+  const offsetMs = tzAsUtc - utcMidnightGuess;
+  const startOfDayMs = utcMidnightGuess - offsetMs;
+
+  return { dateStr, timestamp, display, startOfDayMs };
 }
-
-/**
- * Pre-extract individual paper blocks from emails using pattern matching.
- * This allows batching by paper count instead of email count.
- */
-function preExtractPaperBlocks(rawEmails: any[]): ExtractedPaperBlock[] {
-  const blocks: ExtractedPaperBlock[] = [];
-
-  for (const email of rawEmails) {
-    const body = email.body || '';
-    const from = (email.from || '').toLowerCase();
-    const subject = email.subject || '';
-    const emailId = email.id || '';
-
-    // Google Scholar format: papers are in <h3> tags with gse_alrt_title links
-    if (from.includes('scholar') || from.includes('google')) {
-      // Pattern: <h3...><a class="gse_alrt_title"...>Title</a></h3> followed by citation and snippet divs
-      const scholarPattern = /<h3[^>]*>[\s\S]*?<a[^>]*class="gse_alrt_title"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/h3>[\s\S]*?<div[^>]*style="color:#006621[^>]*>[\s\S]*?<\/div>(?:[\s\S]*?<div[^>]*class="gse_alrt_sni"[^>]*>[\s\S]*?<\/div>)?/gi;
-
-      let match;
-      let lastIndex = 0;
-      const matches: { start: number; end: number; title: string }[] = [];
-
-      while ((match = scholarPattern.exec(body)) !== null) {
-        const title = match[1].replace(/<[^>]+>/g, '').trim();
-        matches.push({ start: match.index, end: match.index + match[0].length, title });
-        lastIndex = scholarPattern.lastIndex;
-      }
-
-      // Extract each paper block
-      for (let i = 0; i < matches.length; i++) {
-        const start = matches[i].start;
-        const end = i + 1 < matches.length ? matches[i + 1].start : matches[i].end + 500; // Include some trailing content
-        const paperHtml = body.slice(start, Math.min(end, body.length));
-
-        blocks.push({
-          emailId,
-          emailFrom: from,
-          emailSubject: subject,
-          paperHtml,
-          estimatedTitle: matches[i].title.substring(0, 50)
-        });
-      }
-
-      // If no patterns matched, treat whole email as one block
-      if (matches.length === 0 && body.length > 100) {
-        blocks.push({
-          emailId,
-          emailFrom: from,
-          emailSubject: subject,
-          paperHtml: body,
-          estimatedTitle: subject.substring(0, 50)
-        });
-      }
-    }
-    // bioRxiv/medRxiv format: papers are in table rows or divs with links
-    else if (from.includes('biorxiv') || from.includes('medrxiv') || from.includes('highwire')) {
-      // These emails typically list papers with links - extract by link patterns
-      const linkPattern = /<a[^>]*href="[^"]*(?:biorxiv|medrxiv)[^"]*"[^>]*>([^<]+)<\/a>/gi;
-      let match;
-      const paperLinks: { title: string; index: number }[] = [];
-
-      while ((match = linkPattern.exec(body)) !== null) {
-        const title = match[1].trim();
-        if (title.length > 20 && !title.toLowerCase().includes('unsubscribe')) {
-          paperLinks.push({ title, index: match.index });
-        }
-      }
-
-      // Group into blocks (each link = one paper approximately)
-      for (const link of paperLinks) {
-        // Extract surrounding context (500 chars before and after)
-        const start = Math.max(0, link.index - 200);
-        const end = Math.min(body.length, link.index + 800);
-
-        blocks.push({
-          emailId,
-          emailFrom: from,
-          emailSubject: subject,
-          paperHtml: body.slice(start, end),
-          estimatedTitle: link.title.substring(0, 50)
-        });
-      }
-
-      // If no papers found, treat whole email as one block
-      if (paperLinks.length === 0 && body.length > 100) {
-        blocks.push({
-          emailId,
-          emailFrom: from,
-          emailSubject: subject,
-          paperHtml: body,
-          estimatedTitle: subject.substring(0, 50)
-        });
-      }
-    }
-    // AHA Journals format: papers are in <a> tags with specific styling + cite-info divs
-    else if (from.includes('ahajournals') || from.includes('heart.org')) {
-      // Pattern: <a style="...font-size:18px;font-weight:bold...">Title</a> followed by loa td and cite-info div
-      // Use [\s\S]*? to handle multi-line titles (some titles span multiple lines in the HTML)
-      const ahaPattern = /<a[^>]*style="[^"]*font-size:18px;font-weight:bold[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
-
-      let match;
-      const paperTitles: { title: string; index: number }[] = [];
-
-      while ((match = ahaPattern.exec(body)) !== null) {
-        // Remove HTML tags and normalize whitespace (handle multi-line titles)
-        const title = match[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-        if (title.length > 20) {
-          paperTitles.push({ title, index: match.index });
-        }
-      }
-
-      // Extract context around each paper (include authors and DOI)
-      for (let i = 0; i < paperTitles.length; i++) {
-        const start = Math.max(0, paperTitles[i].index - 100);
-        const end = i + 1 < paperTitles.length
-          ? paperTitles[i + 1].index
-          : Math.min(body.length, paperTitles[i].index + 2000);
-
-        blocks.push({
-          emailId,
-          emailFrom: from,
-          emailSubject: subject,
-          paperHtml: body.slice(start, end),
-          estimatedTitle: paperTitles[i].title.substring(0, 50)
-        });
-      }
-
-      // If no papers found, treat whole email as one block
-      if (paperTitles.length === 0 && body.length > 100) {
-        blocks.push({
-          emailId,
-          emailFrom: from,
-          emailSubject: subject,
-          paperHtml: body,
-          estimatedTitle: subject.substring(0, 50)
-        });
-      }
-    }
-    // Cell Press and other formats: treat each email as one block
-    else {
-      blocks.push({
-        emailId,
-        emailFrom: from,
-        emailSubject: subject,
-        paperHtml: body,
-        estimatedTitle: subject.substring(0, 50)
-      });
-    }
-  }
-
-  return blocks;
-}
-
-/**
- * Group paper blocks into batches, respecting max papers per batch.
- */
-function batchPaperBlocks(blocks: ExtractedPaperBlock[], maxPapersPerBatch: number): ExtractedPaperBlock[][] {
-  const batches: ExtractedPaperBlock[][] = [];
-
-  for (let i = 0; i < blocks.length; i += maxPapersPerBatch) {
-    batches.push(blocks.slice(i, i + maxPapersPerBatch));
-  }
-
-  return batches;
-}
-
-/**
- * Estimate token count for a paper block.
- * Rough estimation: ~4 characters per token for English text.
- */
-function estimateTokens(block: ExtractedPaperBlock): number {
-  const text = block.paperHtml + block.emailSubject;
-  // Remove HTML tags for more accurate estimation
-  const plainText = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  return Math.ceil(plainText.length / 4);
-}
-
-/**
- * Group paper blocks into batches using hybrid strategy:
- * 1. Try to keep papers from the same email together
- * 2. Respect token limit per batch
- * 3. Fall back to splitting large emails if needed
- */
-function batchPaperBlocksHybrid(
-  blocks: ExtractedPaperBlock[],
-  maxTokensPerBatch: number = 8000,
-  maxPapersPerBatch: number = 50
-): ExtractedPaperBlock[][] {
-  const batches: ExtractedPaperBlock[][] = [];
-
-  // Group blocks by email first
-  const byEmail = new Map<string, ExtractedPaperBlock[]>();
-  for (const block of blocks) {
-    const key = block.emailId;
-    if (!byEmail.has(key)) {
-      byEmail.set(key, []);
-    }
-    byEmail.get(key)!.push(block);
-  }
-
-  let currentBatch: ExtractedPaperBlock[] = [];
-  let currentTokens = 0;
-
-  // Process each email's papers
-  for (const [emailId, emailBlocks] of byEmail) {
-    const emailTokens = emailBlocks.reduce((sum, b) => sum + estimateTokens(b), 0);
-
-    // Case 1: Email fits in current batch
-    if (currentTokens + emailTokens <= maxTokensPerBatch &&
-        currentBatch.length + emailBlocks.length <= maxPapersPerBatch) {
-      currentBatch.push(...emailBlocks);
-      currentTokens += emailTokens;
-    }
-    // Case 2: Email doesn't fit, but current batch has content - start new batch
-    else if (currentBatch.length > 0) {
-      batches.push(currentBatch);
-
-      // Check if email itself exceeds limits (needs splitting)
-      if (emailTokens > maxTokensPerBatch || emailBlocks.length > maxPapersPerBatch) {
-        // Split large email into smaller batches
-        const splitBatches = splitLargeEmailBlocks(emailBlocks, maxTokensPerBatch, maxPapersPerBatch);
-        batches.push(...splitBatches.slice(0, -1)); // Add all but last
-        currentBatch = splitBatches[splitBatches.length - 1] || [];
-        currentTokens = currentBatch.reduce((sum, b) => sum + estimateTokens(b), 0);
-      } else {
-        currentBatch = [...emailBlocks];
-        currentTokens = emailTokens;
-      }
-    }
-    // Case 3: Current batch is empty, email exceeds limits - split it
-    else {
-      const splitBatches = splitLargeEmailBlocks(emailBlocks, maxTokensPerBatch, maxPapersPerBatch);
-      batches.push(...splitBatches.slice(0, -1));
-      currentBatch = splitBatches[splitBatches.length - 1] || [];
-      currentTokens = currentBatch.reduce((sum, b) => sum + estimateTokens(b), 0);
-    }
-  }
-
-  // Don't forget the last batch
-  if (currentBatch.length > 0) {
-    batches.push(currentBatch);
-  }
-
-  return batches;
-}
-
-/**
- * Split a large email's paper blocks into smaller batches.
- */
-function splitLargeEmailBlocks(
-  blocks: ExtractedPaperBlock[],
-  maxTokensPerBatch: number,
-  maxPapersPerBatch: number
-): ExtractedPaperBlock[][] {
-  const batches: ExtractedPaperBlock[][] = [];
-  let currentBatch: ExtractedPaperBlock[] = [];
-  let currentTokens = 0;
-
-  for (const block of blocks) {
-    const blockTokens = estimateTokens(block);
-
-    if (currentTokens + blockTokens <= maxTokensPerBatch &&
-        currentBatch.length < maxPapersPerBatch) {
-      currentBatch.push(block);
-      currentTokens += blockTokens;
-    } else {
-      if (currentBatch.length > 0) {
-        batches.push(currentBatch);
-      }
-      currentBatch = [block];
-      currentTokens = blockTokens;
-    }
-  }
-
-  if (currentBatch.length > 0) {
-    batches.push(currentBatch);
-  }
-
-  return batches;
-}
-
-/**
- * Convert paper blocks back to email-like format for the AI processor.
- */
-function blocksToContent(blocks: ExtractedPaperBlock[]): string {
-  // Group by email to maintain context
-  const byEmail = new Map<string, ExtractedPaperBlock[]>();
-  for (const block of blocks) {
-    const key = block.emailId;
-    if (!byEmail.has(key)) {
-      byEmail.set(key, []);
-    }
-    byEmail.get(key)!.push(block);
-  }
-
-  let content = '';
-  for (const [emailId, emailBlocks] of byEmail) {
-    const first = emailBlocks[0];
-    content += `--- EMAIL ID: ${emailId} ---\n`;
-    content += `From: ${first.emailFrom}\n`;
-    content += `Subject: ${first.emailSubject}\n`;
-    content += emailBlocks.map(b => b.paperHtml).join('\n\n');
-    content += '\n\n';
-  }
-
-  return content;
-}
-
-// ============ End Smart Paper Extraction ============
 
 // Find most recent sync file within the specified time range
 function findRecentSyncFile(minutesAgo: number): string | null {
@@ -428,13 +152,11 @@ function findRecentSyncFile(minutesAgo: number): string | null {
 }
 
 // Check if a report was already generated today (in reports folder)
-function findTodayReport(customTime?: Date): string | null {
+function findTodayReport(timezone: string, customTime?: Date | null): string | null {
   if (!fs.existsSync(reportsDir)) return null;
 
-  // Get today's date in UTC+8 (Asia/Shanghai)
   const now = customTime || new Date();
-  const utcPlus8 = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  const todayStr = utcPlus8.toISOString().slice(0, 10); // YYYY-MM-DD
+  const { dateStr: todayStr } = getTimezoneDateInfo(now, timezone);
 
   const reportFiles = fs.readdirSync(reportsDir)
     .filter(f => f.startsWith('daily_papers_') && f.endsWith('.md'))
@@ -515,17 +237,15 @@ async function generateDailyReport(): Promise<void> {
     console.log(`[Scheduler] Using custom sync hours: ${customHours}`);
   }
 
-  // Generate timestamp in configured timezone (simple UTC+8 for Asia/Shanghai)
-  // If --time argument provided, use that instead of current time
+  // Generate timestamp in configured timezone
   const customTime = parseTimeArg();
   const now = customTime || new Date();
   if (customTime) {
     console.log(`[Scheduler] Using custom time: ${customTime.toISOString()}`);
   }
-  const utcPlus8 = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  const timestamp = utcPlus8.toISOString().slice(0, 19).replace(/[:.]/g, '-');
+  const { timestamp, display } = getTimezoneDateInfo(now, currentConfig.timezone);
 
-  console.log(`\n[${utcPlus8.toISOString().slice(0, 19).replace('T', ' ')}] Starting daily report generation...`);
+  console.log(`\n[${display} (${currentConfig.timezone})] Starting daily report generation...`);
 
   // Check for --sync-file argument first (for testing with specific file)
   // If specified, always process it regardless of existing paper list
@@ -533,7 +253,7 @@ async function generateDailyReport(): Promise<void> {
 
   // Check if today's paper list already exists - skip extraction if so
   // BUT: if --sync-file is specified, we always process it (for testing)
-  const existingPaperList = findTodayReport(customTime);
+  const existingPaperList = findTodayReport(currentConfig.timezone, customTime);
   let skipExtraction = !!existingPaperList;
 
   if (customSyncFile) {
@@ -787,12 +507,7 @@ async function generateDailyReport(): Promise<void> {
     // Calculate today's start time (midnight) in configured timezone
     const nowForFilter = customTime || new Date();
     const nowMs = nowForFilter.getTime();
-
-    // Get start of today in UTC+8 (Asia/Shanghai)
-    const utcPlus8Now = new Date(nowMs + 8 * 60 * 60 * 1000);
-    const todayDateStr = utcPlus8Now.toISOString().slice(0, 10); // YYYY-MM-DD
-    const todayMidnightUtcPlus8 = new Date(todayDateStr + 'T00:00:00.000Z');
-    const todayStartMs = todayMidnightUtcPlus8.getTime() - 8 * 60 * 60 * 1000;
+    const { dateStr: todayDateStr, startOfDayMs: todayStartMs } = getTimezoneDateInfo(nowForFilter, currentConfig.timezone);
 
     const fileInfos = allFiles.map(f => {
       const match = f.match(/analysis-(\d+)\.json/);
@@ -986,37 +701,72 @@ async function generateDailyReport(): Promise<void> {
   console.log(`[Scheduler] Daily report generation completed at ${new Date().toLocaleString()}`);
 }
 
-// Load configuration
-const config = loadConfig();
-const CRON_SCHEDULE = timeToCron(config.time);
+// Manage active cron task with automatic hot-reload when scheduler.config.json changes
+let activeTask: ReturnType<typeof cron.schedule> | null = null;
+let lastScheduleSignature = '';
 
-console.log(`[Scheduler] Starting ScholarPulse Daily Report Scheduler`);
-console.log(`[Scheduler] Text model: ${GEMINI_FLASH_MODEL}`);
-console.log(`[Scheduler] Enabled: ${config.enabled}`);
-console.log(`[Scheduler] Schedule: Every day at ${config.time} (${CRON_SCHEDULE})`);
-console.log(`[Scheduler] Timezone: ${config.timezone}`);
-console.log(`[Scheduler] Gmail Sync: ${config.syncEnabled ? `enabled (${config.syncHours}h, max ${config.syncLimit} emails)` : 'disabled'}`);
-console.log(`[Scheduler] Reuse recent sync: ${config.reuseRecentSyncMinutes > 0 ? `within ${config.reuseRecentSyncMinutes} min` : 'disabled'}`);
-console.log(`[Scheduler] Processing: batchSize=${config.batchSize}, batchDelay=${config.batchDelaySeconds}s, analysisLimit=${config.analysisLimit}, minScore=${config.minScore}`);
-console.log(`[Scheduler] Reports will be saved to: ${reportsDir}`);
-console.log(`[Scheduler] Current time: ${new Date().toLocaleString()}`);
+function applyScheduleFromConfig(isReload: boolean = false) {
+  const cfg = loadConfig();
+  const cronExpr = timeToCron(cfg.time);
+  const signature = `${cfg.enabled}|${cronExpr}|${cfg.timezone}`;
 
-if (!config.enabled) {
-  console.log("[Scheduler] Scheduler is disabled in config. Exiting...");
-  console.log("[Scheduler] To enable, set 'enabled: true' in scheduler.config.json or via the web UI Settings.");
-  process.exit(0);
+  if (isReload && signature === lastScheduleSignature) {
+    return;
+  }
+
+  if (activeTask) {
+    activeTask.stop();
+    activeTask = null;
+  }
+
+  lastScheduleSignature = signature;
+
+  if (!isReload) {
+    console.log(`[Scheduler] Starting ScholarPulse Daily Report Scheduler`);
+    console.log(`[Scheduler] Text model: ${GEMINI_FLASH_MODEL}`);
+    console.log(`[Scheduler] Reports will be saved to: ${reportsDir}`);
+    console.log(`[Scheduler] Current time: ${new Date().toLocaleString()}`);
+  } else {
+    console.log(`\n[Scheduler] Detected config update — reloading schedule...`);
+  }
+
+  console.log(`[Scheduler] Enabled: ${cfg.enabled}`);
+  console.log(`[Scheduler] Schedule: Every day at ${cfg.time} (${cronExpr})`);
+  console.log(`[Scheduler] Timezone: ${cfg.timezone}`);
+  console.log(`[Scheduler] Gmail Sync: ${cfg.syncEnabled ? `enabled (${cfg.syncHours}h, max ${cfg.syncLimit} emails)` : 'disabled'}`);
+  console.log(`[Scheduler] Reuse recent sync: ${cfg.reuseRecentSyncMinutes > 0 ? `within ${cfg.reuseRecentSyncMinutes} min` : 'disabled'}`);
+  console.log(`[Scheduler] Processing: batchSize=${cfg.batchSize}, batchDelay=${cfg.batchDelaySeconds}s, analysisLimit=${cfg.analysisLimit}, minScore=${cfg.minScore}`);
+
+  if (!cfg.enabled) {
+    console.log("[Scheduler] Scheduler is currently paused (enabled=false). Watching scheduler.config.json for changes...");
+    return;
+  }
+
+  activeTask = cron.schedule(cronExpr, () => {
+    generateDailyReport().catch(err => {
+      console.error("[Scheduler] Error during daily report generation:", err);
+    });
+  }, {
+    timezone: cfg.timezone
+  });
+
+  console.log("[Scheduler] Cron schedule active. Watching scheduler.config.json for live updates.\n");
 }
 
-// Schedule the task
-cron.schedule(CRON_SCHEDULE, () => {
-  generateDailyReport().catch(err => {
-    console.error("[Scheduler] Error during daily report generation:", err);
-  });
-}, {
-  timezone: config.timezone
-});
+applyScheduleFromConfig(false);
 
-console.log("[Scheduler] Scheduler is running. Press Ctrl+C to stop.\n");
+// Watch scheduler.config.json for hot-reload (no manual pm2 restart needed)
+let reloadTimer: NodeJS.Timeout | null = null;
+fs.watchFile(configPath, { interval: 3000 }, () => {
+  if (reloadTimer) clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => {
+    try {
+      applyScheduleFromConfig(true);
+    } catch (e) {
+      console.error('[Scheduler] Failed to hot-reload config:', e);
+    }
+  }, 500);
+});
 
 // Run immediately on startup if --now flag is passed
 if (process.argv.includes('--now')) {

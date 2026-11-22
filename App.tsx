@@ -1,20 +1,22 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { Paper, Keyword, DigestSummary, ViewState, RawEmail, AppSettings, HistoryItem } from './types';
 import { processScholarEmails, generateLiteratureReview, deduplicatePapers } from './services/geminiService';
 import Sidebar from './components/Sidebar';
-import Dashboard from './components/Dashboard';
-import ImportView from './components/ImportView';
-import KeywordManager from './components/KeywordManager';
 import { GmailService } from './services/gmailService';
 
 import ErrorBoundary from './components/ErrorBoundary';
-import Preview from './components/Preview';
 import LogViewer from './components/LogViewer';
-import ScheduledReports from './components/ScheduledReports';
-import ArchiveView from './components/ArchiveView';
-import ThemesView from './components/ThemesView';
 import { Bell, BookOpen, Settings, LayoutDashboard, PlusCircle, Search, Mail, CheckCircle, AlertCircle, Loader2, Copy, ExternalLink, HelpCircle, Download, ArrowRight, X, FileText, History, Terminal, CalendarClock, Clock } from 'lucide-react';
+
+// Code-split heavy views to reduce initial JS bundle size
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const ImportView = lazy(() => import('./components/ImportView'));
+const KeywordManager = lazy(() => import('./components/KeywordManager'));
+const Preview = lazy(() => import('./components/Preview'));
+const ScheduledReports = lazy(() => import('./components/ScheduledReports'));
+const ArchiveView = lazy(() => import('./components/ArchiveView'));
+const ThemesView = lazy(() => import('./components/ThemesView'));
 
 const INITIAL_KEYWORDS: Keyword[] = [
   { id: '1', text: 'Aortic Disease', color: 'bg-blue-100 text-blue-700' },
@@ -61,32 +63,72 @@ const AppContent: React.FC = () => {
     } catch { return DEFAULT_SETTINGS; }
   });
 
-  useEffect(() => {
-    try { localStorage.setItem('scholar_pulse_settings_v2', JSON.stringify(settings)); } catch (e) { console.warn('Failed to save settings', e); }
+  const lastSyncedSettingsRef = useRef<string>('');
+  const [hasLoadedSettingsFromServer, setHasLoadedSettingsFromServer] = useState(false);
 
-    // Sync processing settings to scheduler config
+  // Load scheduler config from server on initial mount so server config is the source of truth
+  useEffect(() => {
     (async () => {
       try {
         const res = await fetch('/api/scheduler-config');
-        const schedulerConfig = await res.json();
-        // Merge processing settings into scheduler config
-        const updatedConfig = {
-          ...schedulerConfig,
-          batchSize: settings.batchSize,
-          analysisLimit: settings.analysisLimit,
-          minScore: settings.minScore,
-          scoreBatchSize: settings.scoreBatchSize
-        };
+        if (res.ok) {
+          const serverCfg = await res.json();
+          setSettings(prev => {
+            const merged: AppSettings = {
+              ...prev,
+              schedulerEnabled: typeof serverCfg.enabled === 'boolean' ? serverCfg.enabled : prev.schedulerEnabled,
+              schedulerTime: serverCfg.time || prev.schedulerTime,
+              schedulerTimezone: serverCfg.timezone || prev.schedulerTimezone,
+              batchSize: typeof serverCfg.batchSize === 'number' ? serverCfg.batchSize : prev.batchSize,
+              analysisLimit: typeof serverCfg.analysisLimit === 'number' ? serverCfg.analysisLimit : prev.analysisLimit,
+              minScore: typeof serverCfg.minScore === 'number' ? serverCfg.minScore : prev.minScore,
+              scoreBatchSize: typeof serverCfg.scoreBatchSize === 'number' ? serverCfg.scoreBatchSize : prev.scoreBatchSize,
+            };
+            lastSyncedSettingsRef.current = JSON.stringify({
+              batchSize: merged.batchSize,
+              analysisLimit: merged.analysisLimit,
+              minScore: merged.minScore,
+              scoreBatchSize: merged.scoreBatchSize,
+            });
+            return merged;
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to load scheduler config from server', e);
+      } finally {
+        setHasLoadedSettingsFromServer(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('scholar_pulse_settings_v2', JSON.stringify(settings)); } catch (e) { console.warn('Failed to save settings', e); }
+
+    if (!hasLoadedSettingsFromServer) return;
+
+    const processingPayload = JSON.stringify({
+      batchSize: settings.batchSize,
+      analysisLimit: settings.analysisLimit,
+      minScore: settings.minScore,
+      scoreBatchSize: settings.scoreBatchSize
+    });
+
+    if (processingPayload === lastSyncedSettingsRef.current) return;
+
+    // Sync changed processing settings to scheduler config (server merges fields safely)
+    (async () => {
+      try {
         await fetch('/api/scheduler-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedConfig)
+          body: processingPayload
         });
+        lastSyncedSettingsRef.current = processingPayload;
       } catch (e) {
         console.warn('Failed to sync settings to scheduler config', e);
       }
     })();
-  }, [settings]);
+  }, [settings, hasLoadedSettingsFromServer]);
 
   // Persist Keywords
   const [keywords, setKeywords] = useState<Keyword[]>(() => {
@@ -334,7 +376,7 @@ const AppContent: React.FC = () => {
   }, [fetchedEmails]);
 
   const [syncStatus, setSyncStatus] = useState<{
-    stage: 'idle' | 'fetching' | 'analyzing';
+    stage: 'idle' | 'fetching' | 'analyzing' | 'validating';
     current: number;
     total: number;
   }>({ stage: 'idle', current: 0, total: 0 });
@@ -893,6 +935,8 @@ const AppContent: React.FC = () => {
                       />
                     </div>
                   </span>
+                ) : syncStatus.stage === 'validating' ? (
+                  <span>Validating paper titles...</span>
                 ) : (
                   <span>Analyzing content with AI...</span>
                 )}
@@ -971,6 +1015,14 @@ const AppContent: React.FC = () => {
         </header>
 
         <div className="flex-1 overflow-y-auto p-8">
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-24 text-slate-500 gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                <span className="text-sm font-medium">Loading view...</span>
+              </div>
+            }
+          >
           {view === 'dashboard' && <Dashboard papers={papers} summary={summary} keywords={keywords} onGoToImport={() => setView('import')} />}
           {view === 'import' && <ImportView onImport={async (content) => {
             // Adapt legacy string import to direct processing
@@ -987,7 +1039,7 @@ const AppContent: React.FC = () => {
                const sortedPapers = validPapers.sort((a, b) => b.relevanceScore - a.relevanceScore);
                
                setPapers(sortedPapers);
-               setSummary({ ...result.summary, papers: sortedPapers });
+               setSummary(result.summary);
 
                // Auto-save to local folder
                await saveToLocalFolder(`import-${Date.now()}.json`, { ...result, papers: sortedPapers });
@@ -1245,7 +1297,7 @@ const AppContent: React.FC = () => {
 
                   <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
                     <p className="text-xs text-blue-800 mb-3">
-                      <b>Note:</b> After changing settings, restart the scheduler for changes to take effect:
+                      <b>Auto-Reload:</b> Changes to schedule time, timezone, or enabled status are automatically picked up by the running scheduler within a few seconds. You can still restart manually if needed:
                     </p>
                     <div className="bg-white p-3 rounded-lg border border-blue-200 font-mono text-xs text-slate-700 space-y-1">
                       <p>pm2 restart scholarpulse-scheduler</p>
@@ -1537,6 +1589,7 @@ const AppContent: React.FC = () => {
               </div>
             </div>
           )}
+          </Suspense>
         </div>
         <LogViewer isVisible={showLogs} onClose={() => setShowLogs(false)} />
       </main>
