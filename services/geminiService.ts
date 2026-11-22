@@ -3,7 +3,14 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { Paper, DigestSummary } from "../types.ts";
 import { logger } from "../utils/logger.ts";
 import { extractArticlesFromEmail, type ExtractedArticle } from "./emailArticleExtractor.ts";
-import { GEMINI_FLASH_MODEL } from './geminiModels.ts';
+import {
+  GEMINI_FLASH_MODEL,
+  GEMINI_TEXT_FALLBACK_MODELS,
+  isModelUnavailableError,
+  pickBestFlashModelFromList,
+  executeWithModelFallback,
+  type ListedModelInfo,
+} from './geminiModels.ts';
 
 // Note: Proxy is configured in scripts/loadEnv.ts which replaces globalThis.fetch
 // The Google SDK should use the global fetch which is already proxy-aware
@@ -958,7 +965,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * Parse error message from Gemini API error
  */
-const parseGeminiError = (error: any): { type: 'rate_limit' | 'token_limit' | 'auth' | 'network' | 'unknown', message: string } => {
+const parseGeminiError = (error: any): { type: 'rate_limit' | 'token_limit' | 'auth' | 'network' | 'model_unavailable' | 'unknown', message: string } => {
   const errorStr = error?.message || error?.toString() || '';
   const statusCode = error?.status || error?.statusCode;
 
@@ -979,6 +986,11 @@ const parseGeminiError = (error: any): { type: 'rate_limit' | 'token_limit' | 'a
     return { type: 'auth', message: 'Invalid or missing API key. Please check your VITE_GEMINI_API_KEY in .env.local' };
   }
 
+  // Check for deprecated / removed model errors
+  if (isModelUnavailableError(error)) {
+    return { type: 'model_unavailable', message: `Model unavailable or deprecated: ${errorStr.substring(0, 180)}` };
+  }
+
   // Check for network errors
   if (errorStr.toLowerCase().includes('timeout') || errorStr.toLowerCase().includes('deadline exceeded')) {
     return { type: 'network', message: 'AI request timed out. The content might be too large or the server is busy.' };
@@ -997,58 +1009,99 @@ const parseGeminiError = (error: any): { type: 'rate_limit' | 'token_limit' | 'a
   return { type: 'unknown', message: `AI processing failed: ${errorStr.substring(0, 200)}` };
 };
 
+// Runtime model state: remembers deprecated models and active fallback across calls
+let activeTextModel: string = GEMINI_FLASH_MODEL;
+const unavailableTextModels = new Set<string>();
+
+export const getActiveTextModel = (): string => activeTextModel;
+
+const discoverReplacementFlashModel = async (exclude: Set<string>): Promise<string | null> => {
+  try {
+    logger.warn(`[ModelFallback] Static fallbacks exhausted. Querying Google Models API for latest available Flash model...`);
+    const pager: any = await ai.models.list();
+    const listed: ListedModelInfo[] = [];
+
+    if (pager && typeof pager[Symbol.asyncIterator] === 'function') {
+      for await (const model of pager) {
+        listed.push(model);
+      }
+    } else if (Array.isArray(pager)) {
+      listed.push(...pager);
+    } else if (pager?.models && Array.isArray(pager.models)) {
+      listed.push(...pager.models);
+    }
+
+    const best = pickBestFlashModelFromList(listed, exclude);
+    if (best) {
+      logger.warn(`[ModelFallback] Auto-discovered replacement Flash model: ${best}`);
+    } else {
+      logger.error(`[ModelFallback] Could not find any suitable replacement Flash model from ${listed.length} listed models.`);
+    }
+    return best;
+  } catch (e: any) {
+    logger.error(`[ModelFallback] Failed to list available Gemini models: ${e?.message || e}`);
+    return null;
+  }
+};
+
 /**
- * Execute a Gemini API call with retry logic
+ * Execute a Gemini API call with retry logic AND automatic model fallback/self-healing
+ * when the configured model is deprecated or removed by Google.
  */
 const executeWithRetry = async <T>(
-  action: () => Promise<T>,
-  modelName: string,
+  action: (modelName: string) => Promise<T>,
+  modelName: string = activeTextModel,
   maxRetries: number = 3
 ): Promise<T> => {
-  let lastError: any;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      logger.info(`Attempt ${attempt}/${maxRetries} with model: ${modelName}`);
-      return await action();
-    } catch (error: any) {
-      lastError = error;
-      // Log raw error for debugging
+  const startModel = unavailableTextModels.has(modelName) ? activeTextModel : modelName;
+  const { result, modelUsed } = await executeWithModelFallback<T>({
+    action: async (currentModel) => {
+      logger.info(`Calling Gemini model: ${currentModel}`);
+      return await action(currentModel);
+    },
+    primaryModel: startModel,
+    fallbackModels: GEMINI_TEXT_FALLBACK_MODELS,
+    maxRetriesPerModel: maxRetries,
+    failedModels: unavailableTextModels,
+    discoverModel: discoverReplacementFlashModel,
+    onModelSwitch: (fromModel, toModel, reason) => {
+      logger.warn(
+        `[ModelFallback] ⚠️ Model "${fromModel}" failed (${reason.substring(0, 120)}). Automatically switching to "${toModel}". Please update VITE_GEMINI_FLASH_MODEL or services/geminiModels.ts.`
+      );
+    },
+    retryDelayMs: (attempt, error) => {
       if (attempt === 1) {
-        logger.error(`Raw error (${modelName}): ${error?.message || error?.toString()}`);
+        logger.error(`Raw error (${startModel}): ${error?.message || error?.toString()}`);
       }
       const parsed = parseGeminiError(error);
-      logger.warn(`Attempt ${attempt} failed: ${parsed.message}`);
+      logger.warn(`Attempt ${attempt}/${maxRetries} failed: ${parsed.message}`);
 
-      // Don't retry auth errors - they won't fix themselves
       if (parsed.type === 'auth') {
         throw new Error(parsed.message);
       }
-
-      // For rate limits, wait longer before retry
-      if (parsed.type === 'rate_limit' && attempt < maxRetries) {
-        const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000); // Exponential backoff, max 30s
+      if (attempt >= maxRetries) {
+        return null;
+      }
+      if (parsed.type === 'rate_limit') {
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000);
         logger.warn(`Rate limited. Waiting ${waitTime}ms before retry...`);
-        await delay(waitTime);
-        continue;
+        return waitTime;
       }
-
-      // For network errors, wait progressively longer
-      if (parsed.type === 'network' && attempt < maxRetries) {
-        const waitTime = Math.min(2000 * Math.pow(2, attempt), 60000); // 4s, 8s, 16s, max 60s
+      if (parsed.type === 'network') {
+        const waitTime = Math.min(2000 * Math.pow(2, attempt), 60000);
         logger.warn(`Network error. Waiting ${waitTime}ms before retry...`);
-        await delay(waitTime);
-        continue;
+        return waitTime;
       }
+      return 1000 * attempt;
+    },
+  });
 
-      // For other errors, brief delay before retry
-      if (attempt < maxRetries) {
-        await delay(1000 * attempt);
-      }
-    }
+  if (modelUsed !== activeTextModel) {
+    activeTextModel = modelUsed;
+    logger.warn(`[ModelFallback] Active text model updated for this session -> ${activeTextModel}`);
   }
 
-  throw lastError;
+  return result;
 };
 
 export const processScholarEmails = async (
@@ -1284,10 +1337,10 @@ export const processScholarEmails = async (
     return processInChunks(rawEmails, keywords, maxPapers, penaltyKeywords, linkMap, snippetMap);
   }
 
-  // Helper function with retry logic
+  // Helper function with retry + model fallback logic
   const generateWithRetry = async (modelName: string, maxRetries: number = 3): Promise<any> => {
-    return await executeWithRetry(async () => {
-      const response = await generate(modelName);
+    return await executeWithRetry(async (activeModel) => {
+      const response = await generate(activeModel);
       const jsonStr = response.text;
       if (!jsonStr) throw new Error("Empty response from API");
       return JSON.parse(jsonStr.trim());
@@ -1540,13 +1593,13 @@ ${structuredContent}`;
     };
 
     try {
-      const response = await executeWithRetry(async () => {
+      const response = await executeWithRetry(async (activeModel) => {
         return await ai.models.generateContent({
-          model: GEMINI_FLASH_MODEL,
+          model: activeModel,
           contents: prompt,
           config: { responseMimeType: "application/json", responseSchema: simpleSchema }
         });
-      }, GEMINI_FLASH_MODEL, 3);
+      }, activeTextModel, 3);
 
       const jsonStr = response.text;
       if (!jsonStr) throw new Error("Empty response");
@@ -1738,16 +1791,16 @@ For each paper, extract:
 Content to analyze:
 ${chunk.content}`;
 
-    const response = await executeWithRetry(async () => {
+    const response = await executeWithRetry(async (activeModel) => {
       return await ai.models.generateContent({
-        model: GEMINI_FLASH_MODEL,
+        model: activeModel,
         contents: prompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: simpleSchema
         }
       });
-    }, GEMINI_FLASH_MODEL, 3);
+    }, activeTextModel, 3);
 
     const result = JSON.parse(response.text || '{"papers":[]}');
 
@@ -1943,13 +1996,13 @@ ${structuredContent}`;
   };
 
   try {
-    const response = await executeWithRetry(async () => {
+    const response = await executeWithRetry(async (activeModel) => {
       return await ai.models.generateContent({
-        model: GEMINI_FLASH_MODEL,
+        model: activeModel,
         contents: prompt,
         config: { responseMimeType: "application/json", responseSchema: simpleSchema }
       });
-    }, GEMINI_FLASH_MODEL, 3);
+    }, activeTextModel, 3);
 
     const jsonStr = response.text;
     if (!jsonStr) throw new Error("Empty response");
@@ -2223,12 +2276,12 @@ const generateLiteratureReviewSingleShot = async (
   `;
 
   try {
-    const response = await executeWithRetry(async () => {
+    const response = await executeWithRetry(async (activeModel) => {
       return await ai.models.generateContent({
-        model: GEMINI_FLASH_MODEL,
+        model: activeModel,
         contents: prompt
       });
-    }, GEMINI_FLASH_MODEL, 5); // Increased retries for long-running review generation
+    }, activeTextModel, 5); // Increased retries for long-running review generation
     return response.text || "Failed to generate report.";
   } catch (error) {
     logger.error("Failed to generate literature review (single-shot):", error);
@@ -2267,12 +2320,12 @@ ${papersContext}
 Write the review now:`;
 
   try {
-    const response = await executeWithRetry(async () => {
+    const response = await executeWithRetry(async (activeModel) => {
       return await ai.models.generateContent({
-        model: GEMINI_FLASH_MODEL,
+        model: activeModel,
         contents: prompt
       });
-    }, GEMINI_FLASH_MODEL, 5);
+    }, activeTextModel, 5);
 
     logger.info(`[Lightweight] Review generated successfully`);
     return response.text || "Failed to generate report.";
@@ -2323,13 +2376,13 @@ const generateLiteratureReviewSegmented = async (
       }
     `;
 
-    const outlineResponse = await executeWithRetry(async () => {
+    const outlineResponse = await executeWithRetry(async (activeModel) => {
       return await ai.models.generateContent({
-        model: GEMINI_FLASH_MODEL, // Use Flash for structure/routing (faster, larger context)
+        model: activeModel, // Use Flash for structure/routing (faster, larger context)
         contents: outlinePrompt,
         config: { responseMimeType: "application/json" }
       });
-    }, GEMINI_FLASH_MODEL, 5); // Increased retries for reliability
+    }, activeTextModel, 5); // Increased retries for reliability
 
     const outline = JSON.parse(outlineResponse.text || "{}");
     if (!outline.themes) throw new Error("Failed to generate outline themes.");
@@ -2377,12 +2430,12 @@ const generateLiteratureReviewSegmented = async (
       `;
 
       try {
-        const response = await executeWithRetry(async () => {
+        const response = await executeWithRetry(async (activeModel) => {
           return await ai.models.generateContent({
-            model: GEMINI_FLASH_MODEL,
+            model: activeModel,
             contents: sectionPrompt
           });
-        }, GEMINI_FLASH_MODEL, 5); // Increased retries for section generation
+        }, activeTextModel, 5); // Increased retries for section generation
 
         return { title: themeTitle, content: response.text };
       } catch (e) {
@@ -2430,12 +2483,12 @@ const generateLiteratureReviewSegmented = async (
       - Suggest future directions.
     `;
 
-    const conclusionResponse = await executeWithRetry(async () => {
+    const conclusionResponse = await executeWithRetry(async (activeModel) => {
       return await ai.models.generateContent({
-        model: GEMINI_FLASH_MODEL,
+        model: activeModel,
         contents: conclusionPrompt
       });
-    }, GEMINI_FLASH_MODEL, 5); // Increased retries for conclusion generation
+    }, activeTextModel, 5); // Increased retries for conclusion generation
 
     fullReport += `${conclusionResponse.text}\n\n`;
 

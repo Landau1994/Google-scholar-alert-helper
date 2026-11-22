@@ -30,8 +30,13 @@ Details, can be seen in [ACADEMIC_REPORT](./ACADEMIC_REPORT.md)
 3. Run the app:
    `npm run dev`
 
-Text extraction, scoring, and literature reviews use [`gemini-3.8-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash), configured in `services/geminiModels.ts`.
-After changing the model or scheduler code, reload both PM2 processes with `pm2 restart scholarpulse scholarpulse-scheduler`. If you also change shell environment variables, add `--update-env`.
+Text extraction, scoring, and literature reviews use [`gemini-3.8-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash), and semantic embeddings use `gemini-embedding-2`, both centralized in `services/geminiModels.ts` and overridable via `.env.local` (`VITE_GEMINI_FLASH_MODEL`, `VITE_GEMINI_FALLBACK_MODELS`, `VITE_GEMINI_EMBEDDING_MODEL`).
+If Google deprecates or removes the active text model (`404` / `NOT_FOUND`), ScholarPulse automatically falls back across `GEMINI_TEXT_FALLBACK_MODELS` and, if exhausted, queries the Google Models API to self-heal with the latest available Flash model.
+To protect LanceDB vector space integrity, `data/embedding_meta.json` tracks the indexed embedding model and dimensions:
+- Check model health: `npm run check:models`
+- Safely migrate LanceDB to a new embedding model: `npm run reembed` (supports `--dry-run`)
+
+After changing the model or scheduler code, reload both PM2 processes with `pm2 restart scholarpulse scholarpulse-scheduler --update-env`.
 
 ## Storage & Directories
 
@@ -675,6 +680,8 @@ This project is licensed under the [GNU General Public License v3.0 or later](./
 ## Changelog
 
 ### 2026-11-22
+- **Added**: Automatic model-deprecation resilience in `services/geminiModels.ts` and `services/geminiService.ts`: supports `.env.local` overrides (`VITE_GEMINI_FLASH_MODEL`, `VITE_GEMINI_FALLBACK_MODELS`, `VITE_GEMINI_EMBEDDING_MODEL`), automatic fallback across backup Flash models on `404`/`NOT_FOUND`/deprecation errors, and live `ai.models.list()` auto-discovery when static fallbacks are exhausted.
+- **Added**: LanceDB embedding model guard (`data/embedding_meta.json` + `EmbeddingModelMismatchError`) to prevent silent vector-space corruption when switching embedding models, plus `npm run check:models` (`scripts/checkModels.ts`) and `npm run reembed` (`scripts/reembedDatabase.ts`, with `--dry-run`) for safe full-archive vector migration.
 - **Fixed**: Removed the 10,000-row deduplication limit in `services/vectorService.ts` and ran `scripts/deduplicateDatabase.ts`, merging 2,140 duplicate groups and removing 3,021 redundant records from LanceDB (22,602 → 19,581 unique papers).
 - **Fixed**: Hardened internal API routes in `vite.config.ts` (`/api/save-emails`, `/api/load-report`, `/api/load-scheduled-report`, `/api/validate-refine`) against path traversal, escaped `/oauth2callback` error HTML against XSS, and added OAuth2 CSRF `state` verification.
 - **Fixed**: Added missing `etoc@oup.com` (European Heart Journal) and `blood@hematology.org` (Blood) senders to a shared `services/emailSources.ts` Gmail query builder used by both `syncGmail.ts` and `gmailService.ts`.

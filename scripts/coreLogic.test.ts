@@ -1,8 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { normalizeDateString, normalizeTitleForDedup } from '../services/vectorService.ts';
+import { normalizeDateString, normalizeTitleForDedup, checkEmbeddingMetaCompatibility, EmbeddingModelMismatchError } from '../services/vectorService.ts';
 import { getSourceMultiplier, calculateKeywordBonus, deduplicatePapers } from '../services/geminiService.ts';
+import {
+  isModelUnavailableError,
+  pickBestFlashModelFromList,
+  pickBestEmbeddingModelFromList,
+  executeWithModelFallback,
+} from '../services/geminiModels.ts';
 import { buildGmailAlertQuery, ACADEMIC_ALERT_SENDERS } from '../services/emailSources.ts';
 import { extractArticlesFromEmail } from '../services/emailArticleExtractor.ts';
 import { resolveSafeFilePath, escapeHtml } from '../utils/security.ts';
@@ -115,5 +121,76 @@ test('resolveSafeFilePath blocks path traversal and escapeHtml prevents XSS', ()
   assert.equal(
     escapeHtml('<script>alert("xss")</script>'),
     '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
+  );
+});
+
+test('isModelUnavailableError distinguishes deprecated/404 model errors from rate-limit or auth errors', () => {
+  assert.equal(isModelUnavailableError({ status: 404, message: 'models/gemini-old is not found for API version v1beta' }), true);
+  assert.equal(isModelUnavailableError(new Error('NOT_FOUND: model has been deprecated')), true);
+  assert.equal(isModelUnavailableError({ status: 429, message: 'Quota exceeded' }), false);
+  assert.equal(isModelUnavailableError({ status: 401, message: 'API key invalid' }), false);
+  assert.equal(isModelUnavailableError(new Error('Request timeout')), false);
+});
+
+test('pickBestFlashModelFromList and pickBestEmbeddingModelFromList rank clean replacements', () => {
+  const listed = [
+    { name: 'models/gemini-2.5-flash-image', supportedActions: ['generateContent'] },
+    { name: 'models/gemini-2.5-flash-tts', supportedActions: ['generateContent'] },
+    { name: 'models/gemini-2.5-flash', supportedActions: ['generateContent'] },
+    { name: 'models/gemini-4.0-flash', supportedActions: ['generateContent'] },
+    { name: 'models/gemini-flash-latest', supportedActions: ['generateContent'] },
+    { name: 'models/gemini-embedding-2', supportedActions: ['embedContent'] },
+    { name: 'models/gemini-embedding-3', supportedActions: ['embedContent'] },
+  ];
+
+  assert.equal(pickBestFlashModelFromList(listed), 'gemini-flash-latest');
+  assert.equal(
+    pickBestFlashModelFromList(listed, new Set(['gemini-flash-latest'])),
+    'gemini-4.0-flash'
+  );
+  assert.equal(pickBestEmbeddingModelFromList(listed), 'gemini-embedding-3');
+  assert.equal(
+    pickBestEmbeddingModelFromList(listed, new Set(['gemini-embedding-3'])),
+    'gemini-embedding-2'
+  );
+});
+
+test('executeWithModelFallback falls back across static list and dynamically discovers replacement on 404', async () => {
+  const tried: string[] = [];
+  const switches: string[] = [];
+  const failed = new Set<string>();
+
+  const { result, modelUsed } = await executeWithModelFallback({
+    primaryModel: 'gemini-3.8-flash',
+    fallbackModels: ['gemini-flash-latest'],
+    failedModels: failed,
+    discoverModel: async (exclude) => {
+      assert.ok(exclude.has('gemini-3.8-flash'));
+      assert.ok(exclude.has('gemini-flash-latest'));
+      return 'gemini-4.0-flash';
+    },
+    onModelSwitch: (from, to) => switches.push(`${from}->${to}`),
+    action: async (model) => {
+      tried.push(model);
+      if (model !== 'gemini-4.0-flash') {
+        throw Object.assign(new Error(`models/${model} is not found`), { status: 404 });
+      }
+      return 'ok-from-4.0';
+    },
+  });
+
+  assert.equal(result, 'ok-from-4.0');
+  assert.equal(modelUsed, 'gemini-4.0-flash');
+  assert.deepEqual(tried, ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-4.0-flash']);
+  assert.deepEqual(switches, ['gemini-3.8-flash->gemini-flash-latest', 'gemini-flash-latest->gemini-4.0-flash']);
+});
+
+test('checkEmbeddingMetaCompatibility allows matching model and blocks mismatched vector spaces', () => {
+  const meta = { model: 'gemini-embedding-2', dimensions: 3072, updatedAt: '2026-11-22T00:00:00Z' };
+  assert.doesNotThrow(() => checkEmbeddingMetaCompatibility(meta, 'gemini-embedding-2'));
+  assert.doesNotThrow(() => checkEmbeddingMetaCompatibility(null, 'gemini-embedding-3'));
+  assert.throws(
+    () => checkEmbeddingMetaCompatibility(meta, 'gemini-embedding-3'),
+    (err: any) => err instanceof EmbeddingModelMismatchError && err.message.includes('npm run reembed')
   );
 });

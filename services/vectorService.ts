@@ -3,10 +3,103 @@ import * as lancedb from "@lancedb/lancedb";
 import path from "path";
 import fs from "fs";
 import { logger } from "../utils/logger.ts";
-import { GEMINI_EMBEDDING_MODEL } from "./geminiModels.ts";
+import { GEMINI_EMBEDDING_MODEL, isModelUnavailableError } from "./geminiModels.ts";
 import type { Paper } from "../types.ts";
 
 const VECTOR_DB_PATH = path.resolve(process.cwd(), "data/vector_db");
+export const EMBEDDING_META_PATH = path.resolve(process.cwd(), "data/embedding_meta.json");
+
+export interface EmbeddingMetadata {
+  model: string;
+  dimensions: number;
+  updatedAt: string;
+}
+
+export class EmbeddingModelMismatchError extends Error {
+  readonly configuredModel: string;
+  readonly indexedModel: string;
+  readonly indexedDimensions: number;
+
+  constructor(
+    configuredModel: string,
+    indexedModel: string,
+    indexedDimensions: number
+  ) {
+    super(
+      `Embedding model mismatch: configured "${configuredModel}", but LanceDB index was built with "${indexedModel}" (${indexedDimensions}-dim). Mixing different embedding spaces corrupts semantic search. Run "npm run reembed" to migrate the vector database safely.`
+    );
+    this.name = "EmbeddingModelMismatchError";
+    this.configuredModel = configuredModel;
+    this.indexedModel = indexedModel;
+    this.indexedDimensions = indexedDimensions;
+  }
+}
+
+export const readEmbeddingMetadata = (metaPath: string = EMBEDDING_META_PATH): EmbeddingMetadata | null => {
+  try {
+    if (!fs.existsSync(metaPath)) return null;
+    const raw = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+    if (raw && typeof raw.model === "string" && typeof raw.dimensions === "number") {
+      return raw as EmbeddingMetadata;
+    }
+  } catch (e) {
+    logger.warn("Failed to read embedding_meta.json:", e);
+  }
+  return null;
+};
+
+export const writeEmbeddingMetadata = (
+  meta: EmbeddingMetadata,
+  metaPath: string = EMBEDDING_META_PATH
+): void => {
+  const dir = path.dirname(metaPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+};
+
+/**
+ * Pure compatibility check (throws EmbeddingModelMismatchError when models differ).
+ */
+export const checkEmbeddingMetaCompatibility = (
+  meta: EmbeddingMetadata | null,
+  configuredModel: string = GEMINI_EMBEDDING_MODEL
+): void => {
+  if (!meta) return;
+  if (meta.model !== configuredModel) {
+    throw new EmbeddingModelMismatchError(configuredModel, meta.model, meta.dimensions);
+  }
+};
+
+/**
+ * Ensure the active embedding model matches the existing LanceDB vector space.
+ * Bootstraps data/embedding_meta.json on first run for existing databases.
+ */
+export const assertEmbeddingModelCompatible = async (table?: any): Promise<EmbeddingMetadata | null> => {
+  let meta = readEmbeddingMetadata();
+
+  if (!meta && table) {
+    try {
+      const sample = await table.query().select(["vector"]).limit(1).toArray();
+      const dim = sample[0]?.vector?.length;
+      if (typeof dim === "number" && dim > 0) {
+        meta = {
+          model: GEMINI_EMBEDDING_MODEL,
+          dimensions: dim,
+          updatedAt: new Date().toISOString(),
+        };
+        writeEmbeddingMetadata(meta);
+        logger.info(`Bootstrapped embedding metadata: model=${meta.model}, dimensions=${meta.dimensions}`);
+      }
+    } catch {
+      // Ignore if table is empty or unreadable
+    }
+  }
+
+  checkEmbeddingMetaCompatibility(meta, GEMINI_EMBEDDING_MODEL);
+  return meta;
+};
 
 const PAPER_PUBLIC_COLUMNS = [
   "id",
@@ -95,6 +188,11 @@ const executeWithRetry = async <T>(
       return await action();
     } catch (error: any) {
       lastError = error;
+      if (isModelUnavailableError(error)) {
+        throw new Error(
+          `Embedding model "${GEMINI_EMBEDDING_MODEL}" is unavailable or deprecated (${error?.message || error}). Run "npm run check:models" to inspect available embedding models, update VITE_GEMINI_EMBEDDING_MODEL, and run "npm run reembed".`
+        );
+      }
       const errorMsg = error?.message || error?.toString() || "";
       const isRateLimit =
         errorMsg.includes("429") ||
@@ -204,6 +302,7 @@ export const indexPapers = async (papers: Paper[]) => {
   if (papers.length === 0) return;
 
   const table = await getTable();
+  await assertEmbeddingModelCompatible(table);
 
   // Fetch ALL existing titles (no artificial limit) to prevent duplicate insertion as the archive grows
   const existingTitles = new Set<string>();
@@ -278,6 +377,7 @@ export const searchPapers = async (query: string | null | undefined, limit: numb
   const table = await getTable();
 
   if (query && query.trim()) {
+    await assertEmbeddingModelCompatible(table);
     const queryVector = await generateEmbedding(query);
     let search = table.vectorSearch(queryVector).select([...PAPER_PUBLIC_COLUMNS, "_distance"]).limit(limit);
 

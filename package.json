@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test scripts/validatePaperTitles.test.ts scripts/coreLogic.test.ts",
     "deduplicate": "node scripts/deduplicateDatabase.ts",
+    "check:models": "node scripts/checkModels.ts",
+    "reembed": "node scripts/reembedDatabase.ts",
     "scheduler": "npx tsx scripts/scheduler.ts",
     "scheduler:now": "npx tsx scripts/scheduler.ts --now",
     "sync": "npx tsx scripts/syncGmail.ts",
